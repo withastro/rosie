@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE
 CFLAGS += $(shell pkg-config --cflags libcurl libarchive 2>/dev/null)
 LDFLAGS = $(shell pkg-config --libs libcurl libarchive 2>/dev/null || echo "-lcurl -larchive")
 
@@ -30,7 +30,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-release: CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -O2 $(shell pkg-config --cflags libcurl libarchive 2>/dev/null)
+release: CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -O2 $(shell pkg-config --cflags libcurl libarchive 2>/dev/null)
 release: clean $(TARGET)
 
 clean:

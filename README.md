@@ -8,27 +8,37 @@ A fast, cross-platform package manager for AI agent skills. Think npm, but for s
 
 ## Install
 
-### Dependencies
+### Homebrew (macOS)
+
+```bash
+brew tap matthewp/rosie
+brew install rosie
+```
+
+### Build from source
+
+#### Dependencies
 
 - libcurl
 - libarchive
+- pkg-config
 
 On Debian/Ubuntu:
 ```bash
-sudo apt install libcurl4-openssl-dev libarchive-dev
+sudo apt install libcurl4-openssl-dev libarchive-dev pkg-config
 ```
 
 On macOS:
 ```bash
-brew install curl libarchive
+brew install curl libarchive pkg-config
 ```
 
 On Arch:
 ```bash
-sudo pacman -S curl libarchive
+sudo pacman -S curl libarchive pkgconf
 ```
 
-### Build
+#### Build
 
 ```bash
 git clone https://github.com/matthewp/rosie

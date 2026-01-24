@@ -34,7 +34,9 @@ jobs:
         run: brew install curl libarchive pkg-config
 
       - name: Build
-        run: make
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:$PKG_CONFIG_PATH"
+          make
 
       - name: Verify binary
         run: |

@@ -336,7 +336,7 @@ int install_package(const InstallOptions *opts) {
                 }
             }
         }
-        log_info("Installed %d skill(s) to %d agent(s).", skills->count, agents->count);
+        log_info("Installed %d skill(s) to %d agent(s).", installed, agents->count);
     } else {
         // Local install: copy to .agents/skills/, symlink to each agent
         for (int i = 0; i < skills->count; i++) {
@@ -353,7 +353,7 @@ int install_package(const InstallOptions *opts) {
             }
             spm_free(canonical);
         }
-        log_info("Installed %d skill(s) via symlinks.", skills->count);
+        log_info("Installed %d skill(s) via symlinks.", installed);
     }
 
     // Cleanup

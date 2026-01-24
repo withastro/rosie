@@ -1,10 +1,7 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L
-LDFLAGS = -lcurl -larchive
-
-# Extra flags for platform-specific paths (e.g., Homebrew on macOS)
-CFLAGS += $(EXTRA_CFLAGS)
-LDFLAGS += $(EXTRA_LDFLAGS)
+CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE
+CFLAGS += $(shell pkg-config --cflags libcurl libarchive 2>/dev/null)
+LDFLAGS = $(shell pkg-config --libs libcurl libarchive 2>/dev/null || echo "-lcurl -larchive")
 
 PREFIX ?= /usr/local
 DESTDIR ?=
@@ -33,7 +30,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-release: CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -O2
+release: CFLAGS = -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -O2 $(shell pkg-config --cflags libcurl libarchive 2>/dev/null)
 release: clean $(TARGET)
 
 clean:

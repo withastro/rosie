@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libarchive-dev
+          sudo apt-get install -y libcurl4-openssl-dev libarchive-dev pkg-config
 
       - name: Build
         run: make
@@ -31,12 +31,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install curl libarchive
+        run: brew install curl libarchive pkg-config
 
       - name: Build
-        run: |
-          make EXTRA_CFLAGS="-I$(brew --prefix libarchive)/include" \
-               EXTRA_LDFLAGS="-L$(brew --prefix libarchive)/lib"
+        run: make
 
       - name: Verify binary
         run: |

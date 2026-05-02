@@ -1,0 +1,19 @@
+name: rosie
+version: "${VERSION}"
+origin: sysutils/rosie
+comment: A robot helper for agent skills
+maintainer: matthew@matthewphillips.info
+www: https://github.com/matthewp/rosie
+abi: FreeBSD:14:amd64
+arch: freebsd:14:x86:64
+prefix: /usr/local
+licenselogic: single
+licenses: [BSD-3-Clause]
+desc: <<EOD
+A fast, cross-platform package manager for AI agent skills.
+Think npm, but for skills.
+EOD
+deps: {
+    curl: {origin: ftp/curl, version: "0"}
+    libarchive: {origin: archivers/libarchive, version: "0"}
+}

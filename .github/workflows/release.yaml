@@ -6,10 +6,13 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  create-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha256: ${{ steps.sha256.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,31 +28,30 @@ jobs:
       - name: Calculate source tarball SHA256
         id: sha256
         run: |
-          # Wait for GitHub to generate the tarball
           sleep 5
-          # Download the source tarball
           curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/v${{ steps.version.outputs.version }}.tar.gz" -o source.tar.gz
-          # Calculate SHA256
           sha256=$(sha256sum source.tar.gz | cut -d' ' -f1)
           echo "sha256=$sha256" >> $GITHUB_OUTPUT
           echo "SHA256: $sha256"
 
+  homebrew-and-aur:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Update Homebrew formula
         env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          SHA256: ${{ needs.create-release.outputs.sha256 }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          SHA256="${{ steps.sha256.outputs.sha256 }}"
-
-          # Clone the tap repo
           git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/matthewp/homebrew-rosie.git tap
           cd tap
 
-          # Update the formula
           sed -i "s|url \"https://github.com/matthewp/rosie/archive/refs/tags/v.*\.tar\.gz\"|url \"https://github.com/matthewp/rosie/archive/refs/tags/v${VERSION}.tar.gz\"|" Formula/rosie.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" Formula/rosie.rb
 
-          # Commit and push
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/rosie.rb
@@ -57,9 +59,10 @@ jobs:
           git push
 
       - name: Generate AUR PKGBUILD
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          SHA256: ${{ needs.create-release.outputs.sha256 }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          SHA256="${{ steps.sha256.outputs.sha256 }}"
           sed -e "s/\${VERSION}/$VERSION/g" -e "s/\${SHA256}/$SHA256/g" aur/PKGBUILD > aur/PKGBUILD.gen
           mv aur/PKGBUILD.gen aur/PKGBUILD
           cat aur/PKGBUILD
@@ -72,4 +75,49 @@ jobs:
           commit_username: matthewp
           commit_email: matthew@matthewphillips.info
           ssh_private_key: ${{ secrets.AUR_SSH_KEY }}
-          commit_message: "Update to v${{ steps.version.outputs.version }}"
+          commit_message: "Update to v${{ needs.create-release.outputs.version }}"
+
+  freebsd:
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+
+      - name: Build package in FreeBSD VM
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.2"
+          usesh: true
+          envs: 'VERSION'
+          prepare: |
+            pkg install -y pkgconf curl libarchive gmake
+          run: |
+            gmake CC=cc release
+            ./freebsd-package/build-package.sh "$VERSION"
+            mkdir -p pages/freebsd/All
+            cp "rosie-${VERSION}.pkg" pages/freebsd/All/
+            pkg repo pages/freebsd
+
+      - name: Upload .pkg to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: rosie-${{ needs.create-release.outputs.version }}.pkg
+
+      - name: Commit and push gh-pages
+        run: |
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add freebsd/
+          git commit -m "Publish rosie v${{ needs.create-release.outputs.version }} for FreeBSD"
+          git push

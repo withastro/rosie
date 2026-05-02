@@ -1,0 +1,7 @@
+version = 2;
+packing_format = "tzst";
+manifests = "packagesite.yaml";
+data = "data";
+filesite = "filesite.yaml";
+manifests_archive = "packagesite";
+filesite_archive = "filesite";

@@ -1,0 +1,23 @@
+Architectures: amd64
+Codename: jammy
+Components: main
+Date: Sat, 02 May 2026 14:04:41 +0000
+Label: rosie
+Origin: rosie
+Suite: jammy
+MD5Sum:
+ 91ed76deca6aaf19442da42fcceb822a              132 Release
+ c6322e5eb9965733067b7971a2a222ba              722 main/binary-amd64/Packages
+ 13f4dfe84e6f71e9661365c2d82bebd0              510 main/binary-amd64/Packages.gz
+SHA1:
+ 7160c9a93729985ad8cb5d62d3c98de023778061              132 Release
+ 43fa04e9bda5b0bdebc699e75ad92f6f27faf2fd              722 main/binary-amd64/Packages
+ ed38f80302121a4ae18a642b14ba1514939d16c1              510 main/binary-amd64/Packages.gz
+SHA256:
+ df9fe0a0fec51221f1f0e49b4d1c8464eab828b1cf31ad72207f2b2b892cf603              132 Release
+ 76a573dfb4fafe7a114b07fd8d76facf3c2ae98874e8cc66d385edcc3d90121c              722 main/binary-amd64/Packages
+ c35c355a4a2cced6d803de34bca1b28ea849a02b7df8dd2918f95924093819c1              510 main/binary-amd64/Packages.gz
+SHA512:
+ ff9a3fbe36b2d266f75e6894049716ee687e744c5f0dff0c151c07bbab683962f96109a4e5327cff582cc9d5c0e1b38df3a843f77fa6d7a8d76ee212462f40a1              132 Release
+ dca2e0c0a850d690b6a7c94067789b14ba98c1f6cfabb8b19a437a690bec194345a0a7f55b20b5df0a4f3c62e5744d1c2290ff22375f16312dc15b63f4809e38              722 main/binary-amd64/Packages
+ 2931552c41d9d3bd6e3137645edcc26565ee3c2a7870149c6c30bb776e9e104d5a5163236f4d3cc20c43c12ce26e10e96d22d754b681d04381de5d4764b222ff              510 main/binary-amd64/Packages.gz

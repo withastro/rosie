@@ -1,0 +1,23 @@
+Architectures: amd64
+Codename: noble
+Components: main
+Date: Sat, 02 May 2026 14:04:41 +0000
+Label: rosie
+Origin: rosie
+Suite: noble
+MD5Sum:
+ b0ff3be29e2e054870f753237e4c938f              132 Release
+ acbd129234d760fccd59080af469f5d5              725 main/binary-amd64/Packages
+ 9793ba6f41bcb58612f1eb12c3629eb7              511 main/binary-amd64/Packages.gz
+SHA1:
+ 0fac6548cc83e28413c4952106a4dbe36e78fb79              132 Release
+ 75acf97e19d914b4a4f11cb1ff184a493165fce8              725 main/binary-amd64/Packages
+ c89c6c707f9221635e0e82900bc525b214a9eed4              511 main/binary-amd64/Packages.gz
+SHA256:
+ 1a0c3d0a7fbb5822500c5dba73f3188190b176d9a0b47dfa0cd1c1aaaefe0104              132 Release
+ 773ade3b134bd39b093932d259aa41200c869f1cd06801ca3799e52c4a44e90e              725 main/binary-amd64/Packages
+ 2665f647d8c65d3caa9a3695ec1dc047cea088d4ef9677ea81694ffabbb150c7              511 main/binary-amd64/Packages.gz
+SHA512:
+ c830b4d6f94ae6b9b602df57bdd23d7e509ec9b8c34174eb8bfd41b17f1174349200b21dbd66a142d2f8af55947f561d1750d06eaa1feaaa3202f68ecb8c0b83              132 Release
+ 9f1ae29d6a8b3e91f727013d014a70ae68f3b68a4129420fd8f26eb7149244e2c9af7d03f31c4a11f87474f3b0fe07249b5948f99d5fab555644927dacb868a5              725 main/binary-amd64/Packages
+ 892944c9a75e18830c2c51c50ccf5acd24b95f0f1290196ac9ef07d00e20fd360a67bca0265f6c696d96c34c0736670bb3fc2475c0bb60c5af0bf889573ed79d              511 main/binary-amd64/Packages.gz

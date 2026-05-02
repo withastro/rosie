@@ -1,0 +1,18 @@
+Package: rosie
+Architecture: amd64
+Version: 0.1.4~jammy1
+Priority: optional
+Section: utils
+Maintainer: Matthew Phillips <matthew@matthewphillips.info>
+Depends: libcurl4, libarchive13
+Filename: pool/jammy/rosie_0.1.4~jammy1_amd64.deb
+Size: 16608
+MD5sum: 3a6188ec11ff46dabce4d9ef62d83d70
+SHA1: b7daddbf76b77abc0864989ec0c33e67b8269785
+SHA256: 354b98cce39c20f864fecd319a5dfad6323d7f8d21cb8e325d50a63b55b7ddd8
+SHA512: ab277d7b6f27a32ab43481988e2ad8ead6456ea55498294fcb6b0f579355ee2070150feeb2ebce0e64a76509b53fcdeb50f9090988db51dcaf523739bf1ce18d
+Homepage: https://github.com/matthewp/rosie
+Description: A robot helper for agent skills
+ A fast, cross-platform package manager for AI agent skills.
+ Think npm, but for skills.
+

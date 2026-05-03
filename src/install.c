@@ -747,7 +747,7 @@ int install_from_lockfile(const InstallOptions *base_opts) {
 
     log_info("Reinstalling %d skill(s) from lockfile...", count);
 
-    int ok = 0, fail = 0;
+    int ok = 0, fail = 0, fresh = 0, present = 0;
     for (int i = 0; i < count; i++) {
         // file:// entries point at a tracked working-tree directory. Don't
         // run them through install_package — there's nothing to download and
@@ -772,6 +772,47 @@ int install_from_lockfile(const InstallOptions *base_opts) {
             continue;
         }
 
+        // Trust the lockfile: if .agents/skills/<name>/SKILL.md is already
+        // there, the canonical install matches the recorded SHA. Skip the
+        // download/extract/copy and just make sure each agent's symlink is
+        // in place. The lockfile entry stays untouched (no installed_at
+        // churn for a no-op install).
+        char *canonical = path_join(LOCAL_SKILLS_DIR, snap[i].skill_name);
+        char *canonical_skill_md = path_join(canonical, "SKILL.md");
+        bool present_on_disk = file_exists(canonical_skill_md);
+        spm_free(canonical_skill_md);
+
+        if (present_on_disk) {
+            AgentList *agents;
+            if (base_opts->agent_names && base_opts->agent_count > 0) {
+                agents = agents_from_names(base_opts->agent_names,
+                                           base_opts->agent_count, false);
+            } else {
+                agents = detect_agents(false);
+            }
+
+            // install_skill_local only reads skill->name, so a name-only stub
+            // is enough to recreate the agent->canonical symlinks.
+            Skill stub;
+            memset(&stub, 0, sizeof(stub));
+            stub.name = (char *)snap[i].skill_name;
+
+            int linked = 0;
+            for (int j = 0; j < agents->count; j++) {
+                if (install_skill_local(&stub, &agents->agents[j], canonical) == 0) {
+                    linked++;
+                }
+            }
+            log_info("%s: already at %s (%d agent symlink(s))",
+                     snap[i].skill_name, snap[i].ref, linked);
+            agent_list_free(agents);
+            spm_free(canonical);
+            present++;
+            ok++;
+            continue;
+        }
+        spm_free(canonical);
+
         char *spec_str = build_spec_string(snap[i].source, snap[i].ref);
 
         InstallOptions opts = *base_opts;
@@ -783,7 +824,7 @@ int install_from_lockfile(const InstallOptions *base_opts) {
         opts.override_pinned = true;
         opts.pinned = snap[i].pinned;
 
-        if (install_package(&opts) == 0) ok++;
+        if (install_package(&opts) == 0) { ok++; fresh++; }
         else fail++;
 
         spm_free(spec_str);
@@ -791,10 +832,16 @@ int install_from_lockfile(const InstallOptions *base_opts) {
 
     free_snapshots(snap, count);
     if (fail > 0) {
-        log_error("Reinstalled %d, %d failed", ok, fail);
+        log_error("Reinstalled %d (%d already present, %d fresh), %d failed",
+                  ok, present, fresh, fail);
         return 1;
     }
-    log_info("Reinstalled %d skill(s).", ok);
+    if (fresh == 0) {
+        log_info("All %d skill(s) already installed.", ok);
+    } else {
+        log_info("Reinstalled %d skill(s) (%d already present, %d freshly installed).",
+                 ok, present, fresh);
+    }
     return 0;
 }
 

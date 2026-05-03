@@ -7,7 +7,7 @@
 #include "agent.h"
 #include "util.h"
 
-#define ROSIE_VERSION "0.3.0"
+#define ROSIE_VERSION "0.3.1"
 
 static void print_usage(const char *prog) {
     printf("rosie - A robot helper for agent skills v%s\n\n", ROSIE_VERSION);
@@ -28,6 +28,8 @@ static void print_usage(const char *prog) {
     printf("  -l, --local             Install to current directory (default, uses symlinks)\n");
     printf("  -y, --yes               Skip confirmation prompt\n");
     printf("  -v, --verbose           Enable verbose output\n");
+    printf("  -h, --help              Show this help message\n");
+    printf("  -V, --version           Print version and exit\n");
     printf("\nExamples:\n");
     printf("  %s install vercel-labs/agent-skills\n", prog);
     printf("  %s install anthropics/skills pdf\n", prog);
@@ -272,7 +274,7 @@ int main(int argc, char **argv) {
         print_usage("rosie");
         return 0;
     } else if (strcmp(command, "--version") == 0 || strcmp(command, "-V") == 0) {
-        printf("rosie %s\n", ROSIE_VERSION);
+        printf("%s\n", ROSIE_VERSION);
         return 0;
     } else {
         log_error("Unknown command: %s", command);

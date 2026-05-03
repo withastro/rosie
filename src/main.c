@@ -31,8 +31,12 @@ static void print_usage(const char *prog) {
     printf("  %s install anthropics/skills pdf\n", prog);
     printf("  %s install owner/repo -a claude -a cursor\n", prog);
     printf("  %s install owner/repo@v1.0.0\n", prog);
-    printf("  %s remove vercel-react-best-practices\n", prog);
+    printf("  %s install                    # reinstall from .agents/rosie.lock\n", prog);
+    printf("  %s update                     # update all lockfile entries\n", prog);
+    printf("  %s update slack-gif-creator   # update one skill\n", prog);
+    printf("  %s list                       # show installed skills\n", prog);
     printf("  %s list vercel-labs/agent-skills\n", prog);
+    printf("  %s remove vercel-react-best-practices\n", prog);
     printf("  %s agents\n", prog);
 }
 

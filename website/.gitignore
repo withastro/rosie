@@ -1,0 +1,4 @@
+node_modules/
+.wrangler/
+public/script.js
+public/script.js.map

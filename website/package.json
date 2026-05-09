@@ -1,0 +1,17 @@
+{
+  "name": "rosie-website",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/script.js --bundle --format=esm --minify --sourcemap --outfile=public/script.js",
+    "watch": "esbuild src/script.js --bundle --format=esm --sourcemap --outfile=public/script.js --watch",
+    "deploy": "npm run build && npx wrangler deploy"
+  },
+  "dependencies": {
+    "@matthewp/zebra": "^0.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

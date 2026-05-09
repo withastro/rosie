@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rosie — a robot helper for agent skills</title>
+  <meta name="description" content="A fast, cross-platform package manager for AI agent skills. Think npm, but for skills.">
+  <meta property="og:title" content="rosie — a robot helper for agent skills">
+  <meta property="og:description" content="A fast, cross-platform package manager for AI agent skills.">
+  <meta property="og:url" content="https://rosie.libs.technology/">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+  <div class="terminal">
+    <header class="titlebar">
+      <div class="dots" aria-hidden="true">
+        <span class="dot dot-red"></span>
+        <span class="dot dot-yellow"></span>
+        <span class="dot dot-green"></span>
+      </div>
+      <div class="title">matthewp/rosie — main</div>
+      <div class="titlebar-spacer" aria-hidden="true"></div>
+    </header>
+
+    <main class="content">
+
+      <section class="hero">
+        <div class="prompt-line"><span class="prompt">$</span> cat README</div>
+
+        <h1 class="visually-hidden">Rosie — a robot helper for agent skills</h1>
+        <div class="ascii-art" aria-hidden="true">
+<pre class="art-robot"> ┏━━━━━━━┓
+ ┃ <span class="eye">●</span>   <span class="eye">●</span> ┃
+ ┃  ═══  ┃
+ ┗━━━┳━━━┛
+     ┃</pre>
+<pre class="art-wordmark"> ____   ___  ____ ___ _____
+|  _ \ / _ \/ ___|_ _| ____|
+| |_) | | | \___ \| ||  _|
+|  _ &lt;| |_| |___) | || |___
+|_| \_\___/|____/___|_____|</pre>
+        </div>
+
+        <p class="tagline">a robot helper for agent skills.</p>
+        <p class="tagline">fast, cross-platform package manager — think npm, but for skills.</p>
+
+<pre class="term-block"><span class="prompt">$</span> rosie install anthropics/skills
+<span class="arrow">→</span> resolved main (a1b2c3d)
+<span class="arrow">→</span> found 12 skills · detected: claude, cursor, opencode
+<span class="check">✓</span> installed to .agents/skills/</pre>
+
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#install">[ install rosie ]</a>
+          <a class="btn btn-ghost" href="https://github.com/matthewp/rosie">[ github → ]</a>
+        </div>
+      </section>
+
+      <div class="section-rule">
+        <span class="dashes">──</span>
+        <span class="label">what rosie does</span>
+        <span class="dashes-grow"></span>
+      </div>
+
+      <section class="features">
+        <ul class="bullet-list">
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">discovers skills</strong>
+            <span class="val">finds every SKILL.md in any GitHub repo</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">multi-agent install</strong>
+            <span class="val">claude, cursor, opencode, codex — auto-detected</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">lockfile</strong>
+            <span class="val">.agents/rosie.lock pins exact SHAs for reproducible installs</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">native c, no runtime</strong>
+            <span class="val">single small binary. no node, no python, no jvm.</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="demo" data-demo hidden>
+        <div class="section-rule">
+          <span class="dashes">──</span>
+          <span class="label">demo</span>
+          <span class="dashes-grow"></span>
+        </div>
+        <div class="demo-frame">
+          <object data="/demo.svg" type="image/svg+xml" aria-label="rosie install demo">
+            your browser does not support embedded svg
+          </object>
+        </div>
+      </section>
+
+      <div class="section-rule" id="install">
+        <span class="dashes">──</span>
+        <span class="label">install</span>
+        <span class="dashes-grow"></span>
+      </div>
+
+      <section class="install">
+        <div class="tabs" role="tablist" aria-label="install method">
+          <button class="tab active" role="tab" data-tab="brew">[ macos ]</button>
+          <button class="tab" role="tab" data-tab="aur">[ arch ]</button>
+          <button class="tab" role="tab" data-tab="apt">[ debian ]</button>
+          <button class="tab" role="tab" data-tab="pkg">[ freebsd ]</button>
+          <button class="tab" role="tab" data-tab="src">[ source ]</button>
+        </div>
+
+        <div class="tab-panel active" data-panel="brew">
+<pre class="term-block"><span class="prompt">$</span> brew tap matthewp/rosie
+<span class="prompt">$</span> brew install rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="aur">
+<pre class="term-block"><span class="prompt">$</span> yay -S rosie
+<span class="comment"># or</span>
+<span class="prompt">$</span> paru -S rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="apt">
+          <p class="panel-note"><span class="comment"># noble for ubuntu 24.04 / debian 13+, jammy for ubuntu 22.04</span></p>
+<pre class="term-block"><span class="prompt">$</span> echo "deb [trusted=yes] https://matthewp.github.io/rosie/debian noble main" \
+    | sudo tee /etc/apt/sources.list.d/rosie.list
+<span class="prompt">$</span> sudo apt update
+<span class="prompt">$</span> sudo apt install rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="pkg">
+          <p class="panel-note"><span class="comment"># add the rosie repo, then install</span></p>
+<pre class="term-block"><span class="prompt">$</span> sudo mkdir -p /usr/local/etc/pkg/repos
+<span class="prompt">$</span> cat &lt;&lt;'EOF' | sudo tee /usr/local/etc/pkg/repos/rosie.conf
+rosie: {
+  url: "https://matthewp.github.io/rosie/freebsd/",
+  enabled: yes,
+  signature_type: "none"
+}
+EOF
+<span class="prompt">$</span> sudo pkg update &amp;&amp; sudo pkg install rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
+        </div>
+
+        <div class="tab-panel" data-panel="src">
+          <p class="panel-note"><span class="comment"># requires libcurl, libarchive, pkg-config</span></p>
+<pre class="term-block"><span class="prompt">$</span> git clone https://github.com/matthewp/rosie
+<span class="prompt">$</span> cd rosie
+<span class="prompt">$</span> make
+<span class="prompt">$</span> sudo make install<button class="copy-btn" data-copy>[ copy ]</button></pre>
+        </div>
+      </section>
+
+      <div class="section-rule">
+        <span class="dashes">──</span>
+        <span class="label">lockfile</span>
+        <span class="dashes-grow"></span>
+      </div>
+
+      <section class="lockfile">
+        <p class="lockfile-intro">every install is recorded in <code>.agents/rosie.lock</code> — small, line-oriented, diffs cleanly. check it into git.</p>
+
+<pre class="term-block"><span class="prompt">$</span> cat .agents/rosie.lock
+<span class="lock-name">slack-gif-creator</span> anthropics/skills    main   <span class="lock-sha">5128e186…</span> <span class="comment">2026-05-02T14:32:18Z</span> <span class="lock-auto">auto</span>
+<span class="lock-name">theme-factory</span>     anthropics/skills    v1.0.0 <span class="lock-sha">a1b2c3d4…</span> <span class="comment">2026-05-02T14:35:01Z</span> <span class="lock-pin">pin</span>
+<span class="lock-name">vite</span>              antfu/skills         main   <span class="lock-sha">f4d2e9c1…</span> <span class="comment">2026-05-02T14:38:44Z</span> <span class="lock-auto">auto</span>
+<span class="lock-name">house-style</span>       file://./house-style -      -         <span class="comment">2026-05-02T14:41:09Z</span> <span class="lock-pin">pin</span></pre>
+
+        <ul class="bullet-list">
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key lock-auto">auto</strong>
+            <span class="val">installed without a ref · <code>rosie update</code> advances to the latest semver tag</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key lock-pin">pin</strong>
+            <span class="val">installed with <code>@ref</code> · ref stays put, only the SHA refreshes</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">local</strong>
+            <span class="val"><code>rosie install ./my-skill</code> writes a <code>file://</code> entry · hand-authored skills in your repo travel with it</span>
+          </li>
+        </ul>
+      </section>
+
+      <div class="section-rule">
+        <span class="dashes-grow"></span>
+      </div>
+
+      <footer class="page-footer">
+        <p>rosie · BSD-3 · <a href="https://github.com/matthewp/rosie">github.com/matthewp/rosie</a></p>
+        <p class="cursor"><span class="prompt">$</span><span class="blink"></span></p>
+      </footer>
+    </main>
+  </div>
+
+  <script type="module" src="/script.js"></script>
+</body>
+</html>

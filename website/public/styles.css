@@ -255,7 +255,13 @@ pre.term-block {
   letter-spacing: .03em;
 }
 .section-rule .dashes { color: var(--fg-dim); }
-.section-rule .label { color: var(--teal); }
+.section-rule .label {
+  color: var(--teal);
+  text-decoration: none;
+}
+.section-rule a.label:hover { text-decoration: underline; }
+.section-rule [id]:target,
+:target > .section-rule { scroll-margin-top: 1rem; }
 .section-rule .dashes-grow {
   flex: 1;
   border-top: 1px dashed var(--border);

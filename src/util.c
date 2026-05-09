@@ -285,3 +285,115 @@ void log_debug(const char *fmt, ...) {
     va_end(args);
     printf("\n");
 }
+
+// Slurp a file into a malloc'd, NUL-terminated buffer. NULL on any error.
+static char *slurp(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
+    long len = ftell(fp);
+    if (len < 0) { fclose(fp); return NULL; }
+    rewind(fp);
+    char *buf = spm_malloc((size_t)len + 1);
+    size_t got = fread(buf, 1, (size_t)len, fp);
+    fclose(fp);
+    buf[got] = '\0';
+    return buf;
+}
+
+// Scan past whitespace.
+static const char *skip_ws(const char *p) {
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    return p;
+}
+
+// Decode a JSON string starting at *p (which points just past the opening
+// quote). Returns malloc'd string with escapes resolved (\n \t \r \" \\ \/),
+// other escape sequences passed through verbatim. Advances *p past the
+// closing quote. Returns NULL on unterminated string.
+static char *parse_json_string(const char **p) {
+    const char *s = *p;
+    size_t cap = 32, len = 0;
+    char *out = spm_malloc(cap);
+    while (*s && *s != '"') {
+        char c;
+        if (*s == '\\' && s[1]) {
+            switch (s[1]) {
+                case '"':  c = '"';  break;
+                case '\\': c = '\\'; break;
+                case '/':  c = '/';  break;
+                case 'n':  c = '\n'; break;
+                case 't':  c = '\t'; break;
+                case 'r':  c = '\r'; break;
+                default:   c = s[1]; break;  // pass through
+            }
+            s += 2;
+        } else {
+            c = *s++;
+        }
+        if (len + 1 >= cap) {
+            cap *= 2;
+            out = spm_realloc(out, cap);
+        }
+        out[len++] = c;
+    }
+    if (*s != '"') {
+        spm_free(out);
+        return NULL;
+    }
+    out[len] = '\0';
+    *p = s + 1;
+    return out;
+}
+
+char *read_json_string_field(const char *path, const char *field) {
+    if (!path || !field) return NULL;
+    char *contents = slurp(path);
+    if (!contents) return NULL;
+
+    size_t field_len = strlen(field);
+    const char *p = contents;
+    char *result = NULL;
+
+    // Find a token that looks like "field" : at top-level by scanning. We
+    // tolerate nested objects/strings sloppily — scan over strings whole, and
+    // return the first match outside any string. For package.json's
+    // "version" field this is more than sufficient.
+    while (*p) {
+        if (*p == '"') {
+            // Possible key; capture and check.
+            const char *key_start = ++p;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1]) p += 2;
+                else p++;
+            }
+            if (*p != '"') break;  // unterminated
+            size_t key_len = (size_t)(p - key_start);
+            p++;  // past closing quote
+            const char *after = skip_ws(p);
+            if (*after == ':') {
+                after = skip_ws(after + 1);
+                if (key_len == field_len &&
+                    strncmp(key_start, field, field_len) == 0) {
+                    if (*after == '"') {
+                        const char *value_start = after + 1;
+                        result = parse_json_string(&value_start);
+                        break;
+                    }
+                    // Field exists but value isn't a string — abort.
+                    break;
+                }
+                // Skip the value: only handle string values precisely; for
+                // numbers/objects/arrays just keep scanning forward (the next
+                // top-level key match still works because we always re-enter
+                // via the '"' branch).
+                p = after;
+            }
+        } else {
+            p++;
+        }
+    }
+
+    spm_free(contents);
+    return result;
+}

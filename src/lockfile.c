@@ -7,7 +7,8 @@
 #include <unistd.h>
 
 #define LOCKFILE_NAME "rosie.lock"
-#define LOCKFILE_LINE_MAX 1024
+#define LOCKFILE_LINE_MAX 2048
+#define LOCKFILE_VERSION 1
 
 static void lock_entry_free(LockEntry *e) {
     if (!e) return;
@@ -58,10 +59,11 @@ Lockfile *lockfile_load(const char *dir) {
         char *trimmed = str_trim(line);
         if (trimmed[0] == '\0' || trimmed[0] == '#') continue;
 
-        char skill_name[256], source[512], ref[256], sha[64], ts[64], pin[16];
+        char skill_name[256], source[1024], ref[256], sha[64], ts[64], pin[16], kind[16];
         pin[0] = '\0';
-        int n = sscanf(trimmed, "%255s %511s %255s %63s %63s %15s",
-                       skill_name, source, ref, sha, ts, pin);
+        kind[0] = '\0';
+        int n = sscanf(trimmed, "%255s %1023s %255s %63s %63s %15s %15s",
+                       skill_name, source, ref, sha, ts, pin, kind);
         if (n < 5) {
             log_debug("Skipping malformed lockfile line: %s", trimmed);
             continue;
@@ -76,6 +78,8 @@ Lockfile *lockfile_load(const char *dir) {
         e->installed_at = str_dup(ts);
         // Pinned flag is optional for backwards compat; default to false (auto).
         e->pinned = (n >= 6) && (strcmp(pin, "pin") == 0);
+        // Kind is optional (legacy v0 lockfiles have no 7th field). Default to skill.
+        e->kind = (n >= 7 && strcmp(kind, "ref") == 0) ? LOCK_REF : LOCK_SKILL;
     }
 
     fclose(fp);
@@ -108,11 +112,14 @@ int lockfile_save(const Lockfile *lf) {
         return -1;
     }
 
+    fprintf(fp, "# rosie-lock v%d\n", LOCKFILE_VERSION);
+
     for (int i = 0; i < lf->count; i++) {
         const LockEntry *e = &lf->entries[i];
-        fprintf(fp, "%s %s %s %s %s %s\n",
+        fprintf(fp, "%s %s %s %s %s %s %s\n",
                 e->skill_name, e->source, e->ref, e->sha, e->installed_at,
-                e->pinned ? "pin" : "auto");
+                e->pinned ? "pin" : "auto",
+                e->kind == LOCK_REF ? "ref" : "skill");
     }
 
     if (fclose(fp) != 0) {
@@ -145,7 +152,7 @@ LockEntry *lockfile_find(const Lockfile *lf, const char *skill_name) {
 
 void lockfile_upsert(Lockfile *lf, const char *skill_name, const char *source,
                      const char *ref, const char *sha, const char *installed_at,
-                     bool pinned) {
+                     bool pinned, LockKind kind) {
     if (!lf || !skill_name) return;
 
     LockEntry *e = lockfile_find(lf, skill_name);
@@ -159,6 +166,7 @@ void lockfile_upsert(Lockfile *lf, const char *skill_name, const char *source,
         e->sha = str_dup(sha);
         e->installed_at = str_dup(installed_at);
         e->pinned = pinned;
+        e->kind = kind;
         return;
     }
 
@@ -170,6 +178,7 @@ void lockfile_upsert(Lockfile *lf, const char *skill_name, const char *source,
     e->sha = str_dup(sha);
     e->installed_at = str_dup(installed_at);
     e->pinned = pinned;
+    e->kind = kind;
 }
 
 int lockfile_remove_entry(Lockfile *lf, const char *skill_name) {

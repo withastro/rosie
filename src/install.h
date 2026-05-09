@@ -18,6 +18,18 @@ typedef struct {
     // the spec string.
     bool override_pinned;
     bool pinned;
+    // Reference install (--ref): write a markdown doc under .agents/references/
+    // and index it in the project's AGENTS.md / CLAUDE.md instead of installing
+    // a skill into agent dirs.
+    bool is_reference;
+    const char *name_override;  // --name <s>; only valid with is_reference
+    // npm package reference (--npm): symlink .md files from
+    // node_modules/<spec>/ instead of downloading a tarball. Implies
+    // is_reference. include_paths is a list of --include arguments that
+    // override the default file scope (README + docs/**.md).
+    bool is_npm;
+    const char **include_paths;
+    int include_count;
 } InstallOptions;
 
 typedef struct {

@@ -3,13 +3,19 @@
 
 #include <stdbool.h>
 
+typedef enum {
+    LOCK_SKILL = 0,
+    LOCK_REF = 1,
+} LockKind;
+
 typedef struct {
     char *skill_name;
-    char *source;        // "owner/repo"
+    char *source;        // "owner/repo" or "owner/repo#skill" for ref-from-skill
     char *ref;           // tag, branch, or "-" for raw commit
     char *sha;           // 40 hex chars or "-" if unknown
     char *installed_at;  // ISO 8601 UTC, e.g. "2026-05-02T14:32:18Z"
     bool pinned;         // true if installed with explicit @ref; false if auto-resolved
+    LockKind kind;       // LOCK_SKILL (default for legacy v0 entries) or LOCK_REF
 } LockEntry;
 
 typedef struct {
@@ -30,7 +36,7 @@ int lockfile_save(const Lockfile *lf);
 // Insert or replace entry for skill_name. All string args are duplicated.
 void lockfile_upsert(Lockfile *lf, const char *skill_name, const char *source,
                      const char *ref, const char *sha, const char *installed_at,
-                     bool pinned);
+                     bool pinned, LockKind kind);
 
 // Remove entry by skill_name. Returns 1 if removed, 0 if not present.
 int lockfile_remove_entry(Lockfile *lf, const char *skill_name);

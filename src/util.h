@@ -20,6 +20,12 @@ char *str_trim(char *s);
 bool str_starts_with(const char *s, const char *prefix);
 bool str_ends_with(const char *s, const char *suffix);
 
+// JSON: read a top-level string field from a JSON file. Hand-rolled scanner;
+// handles common backslash escapes (no Unicode escape decoding). Returns
+// malloc'd value or NULL on any error (file missing, field absent, value
+// isn't a string).
+char *read_json_string_field(const char *path, const char *field);
+
 // Memory management
 void *spm_malloc(size_t size);
 void *spm_realloc(void *ptr, size_t size);

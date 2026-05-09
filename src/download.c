@@ -9,6 +9,8 @@
 
 #define LOCAL_SOURCE_PREFIX "file://"
 #define LOCAL_SOURCE_PREFIX_LEN 7
+#define NPM_SOURCE_PREFIX "npm:"
+#define NPM_SOURCE_PREFIX_LEN 4
 
 static bool curl_initialized = false;
 
@@ -39,6 +41,42 @@ bool source_is_local(const char *source) {
 const char *source_local_path(const char *source) {
     if (!source_is_local(source)) return NULL;
     return source + LOCAL_SOURCE_PREFIX_LEN;
+}
+
+bool source_is_npm(const char *source) {
+    if (!source) return false;
+    return strncmp(source, NPM_SOURCE_PREFIX, NPM_SOURCE_PREFIX_LEN) == 0;
+}
+
+const char *source_npm_after_prefix(const char *source) {
+    if (!source_is_npm(source)) return NULL;
+    return source + NPM_SOURCE_PREFIX_LEN;
+}
+
+void source_npm_split(const char *source, char **pkg_out, char **file_out) {
+    if (pkg_out) *pkg_out = NULL;
+    if (file_out) *file_out = NULL;
+    const char *body = source_npm_after_prefix(source);
+    if (!body) return;
+
+    // Split on the LAST '#' so scoped packages (which contain no '#') and any
+    // future quirks are tolerated. npm package names cannot contain '#' so
+    // the first '#' is also fine — using last is just defensive.
+    const char *hash = strchr(body, '#');
+    if (!hash) {
+        if (pkg_out) *pkg_out = str_dup(body);
+        return;
+    }
+    size_t pkg_len = (size_t)(hash - body);
+    if (pkg_out) {
+        char *pkg = spm_malloc(pkg_len + 1);
+        memcpy(pkg, body, pkg_len);
+        pkg[pkg_len] = '\0';
+        *pkg_out = pkg;
+    }
+    if (file_out && hash[1] != '\0') {
+        *file_out = str_dup(hash + 1);
+    }
 }
 
 // True if the user-supplied argument should be treated as a local-path skill
@@ -137,6 +175,7 @@ PackageSpec *package_spec_parse(const char *spec) {
         ps->repo = NULL;
         ps->ref = NULL;
         ps->ref_explicit = false;
+        ps->skill_in_spec = NULL;
         ps->is_local = true;
         ps->local_path = canonical;
         return ps;
@@ -147,6 +186,7 @@ PackageSpec *package_spec_parse(const char *spec) {
     ps->repo = NULL;
     ps->ref = NULL;
     ps->ref_explicit = false;
+    ps->skill_in_spec = NULL;
     ps->is_local = false;
     ps->local_path = NULL;
 
@@ -164,12 +204,22 @@ PackageSpec *package_spec_parse(const char *spec) {
         ps->ref_explicit = false;
     }
 
+    // Check for #skill suffix (after stripping @ref)
+    char *hash = strchr(work, '#');
+    if (hash) {
+        *hash = '\0';
+        if (hash[1] != '\0') {
+            ps->skill_in_spec = str_dup(hash + 1);
+        }
+    }
+
     // Parse owner/repo
     char *slash = strchr(work, '/');
     if (!slash) {
         log_error("Invalid package spec: %s (expected owner/repo)", spec);
         spm_free(work);
         spm_free(ps->ref);
+        spm_free(ps->skill_in_spec);
         spm_free(ps);
         return NULL;
     }
@@ -194,6 +244,7 @@ void package_spec_free(PackageSpec *spec) {
     spm_free(spec->owner);
     spm_free(spec->repo);
     spm_free(spec->ref);
+    spm_free(spec->skill_in_spec);
     spm_free(spec->local_path);
     spm_free(spec);
 }

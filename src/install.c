@@ -5,7 +5,10 @@
 #include "agent.h"
 #include "lockfile.h"
 #include "resolve.h"
+#include "agentsmd.h"
+#include "npm.h"
 #include "util.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +20,7 @@
 // Local install storage directory
 #define LOCAL_AGENTS_DIR ".agents"
 #define LOCAL_SKILLS_DIR ".agents/skills"
+#define LOCAL_REFERENCES_DIR ".agents/references"
 
 int install_skill_to_agent(const Skill *skill, const Agent *agent) {
     if (!skill || !agent) return -1;
@@ -259,7 +263,7 @@ static int install_local(const char *canonical_rel, const InstallOptions *opts) 
     char *source = spm_malloc(source_len);
     snprintf(source, source_len, "file://%s", canonical_rel);
 
-    lockfile_upsert(lf, skill->name, source, "-", "-", now, true);
+    lockfile_upsert(lf, skill->name, source, "-", "-", now, true, LOCK_SKILL);
 
     if (lockfile_save(lf) != 0) {
         log_error("Warning: failed to write %s", lf->path);
@@ -320,10 +324,342 @@ static int remove_dir_recursive(const char *path) {
     return rmdir(path);
 }
 
+// Compute the default install name for a reference: "<owner>-<repo>" with an
+// optional "-<skill>" suffix when --skill is in play.
+static char *default_ref_name(const PackageSpec *spec, const char *skill) {
+    size_t len = strlen(spec->owner) + 1 + strlen(spec->repo) + 1;
+    if (skill && skill[0]) len += 1 + strlen(skill);
+    char *out = spm_malloc(len);
+    if (skill && skill[0]) {
+        snprintf(out, len, "%s-%s-%s", spec->owner, spec->repo, skill);
+    } else {
+        snprintf(out, len, "%s-%s", spec->owner, spec->repo);
+    }
+    return out;
+}
+
+// Look for README.md (or any case variant) at the root of an extracted repo.
+// Returns a malloc'd absolute path on success, NULL when nothing was found.
+static char *find_readme_in_tree(const char *root) {
+    char *exact = path_join(root, "README.md");
+    if (file_exists(exact)) return exact;
+    spm_free(exact);
+
+    DIR *dir = opendir(root);
+    if (!dir) return NULL;
+
+    struct dirent *entry;
+    char *match = NULL;
+    while ((entry = readdir(dir)) != NULL) {
+        const char *n = entry->d_name;
+        if (strlen(n) < 6) continue;  // need at least "readme"
+        if (tolower((unsigned char)n[0]) == 'r' &&
+            tolower((unsigned char)n[1]) == 'e' &&
+            tolower((unsigned char)n[2]) == 'a' &&
+            tolower((unsigned char)n[3]) == 'd' &&
+            tolower((unsigned char)n[4]) == 'm' &&
+            tolower((unsigned char)n[5]) == 'e') {
+            char *candidate = path_join(root, n);
+            struct stat st;
+            if (stat(candidate, &st) == 0 && S_ISREG(st.st_mode)) {
+                match = candidate;
+                break;
+            }
+            spm_free(candidate);
+        }
+    }
+    closedir(dir);
+    return match;
+}
+
+// Write a string buffer to a file, creating parent directories as needed.
+static int write_string_to_file(const char *path, const char *contents) {
+    if (!path || !contents) return -1;
+
+    char *path_copy = str_dup(path);
+    char *last_slash = strrchr(path_copy, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+        if (make_dirs(path_copy) != 0) {
+            log_error("Cannot create directory: %s", path_copy);
+            spm_free(path_copy);
+            return -1;
+        }
+    }
+    spm_free(path_copy);
+
+    FILE *fp = fopen(path, "wb");
+    if (!fp) {
+        log_error("Cannot create %s", path);
+        return -1;
+    }
+    size_t len = strlen(contents);
+    if (fwrite(contents, 1, len, fp) != len) {
+        log_error("Failed writing %s", path);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+    return 0;
+}
+
+// Build the symlink target path for an npm ref: stepping up out of
+// .agents/references/<name>/ takes 3 ../ to reach the project root.
+static char *npm_symlink_target(const char *pkg, const char *rel_path) {
+    // "../../../node_modules/<pkg>/<rel_path>"
+    char *part1 = path_join("../../../node_modules", pkg);
+    char *out = path_join(part1, rel_path);
+    spm_free(part1);
+    return out;
+}
+
+// Place a single npm reference symlink at .agents/references/<name>/REFERENCE.md
+// pointing back into node_modules. Removes any existing symlink/file at the
+// target path. Returns 0 on success.
+static int npm_install_one(const char *name, const char *pkg, const char *rel_path) {
+    char *ref_dir = path_join(LOCAL_REFERENCES_DIR, name);
+    if (make_dirs(ref_dir) != 0) {
+        log_error("Cannot create directory: %s", ref_dir);
+        spm_free(ref_dir);
+        return -1;
+    }
+
+    char *link_path = path_join(ref_dir, "REFERENCE.md");
+    char *target = npm_symlink_target(pkg, rel_path);
+
+    struct stat st;
+    if (lstat(link_path, &st) == 0) {
+        if (S_ISLNK(st.st_mode) || S_ISREG(st.st_mode)) {
+            unlink(link_path);
+        }
+    }
+
+    log_debug("Symlink: %s -> %s", link_path, target);
+    if (symlink(target, link_path) != 0) {
+        log_error("Failed to create symlink: %s", link_path);
+        spm_free(target);
+        spm_free(link_path);
+        spm_free(ref_dir);
+        return -1;
+    }
+
+    spm_free(target);
+    spm_free(link_path);
+    spm_free(ref_dir);
+    return 0;
+}
+
+// Build the lockfile source string for an npm ref: "npm:<pkg>#<rel_path>".
+static char *npm_lock_source(const char *pkg, const char *rel_path) {
+    size_t len = 4 /*"npm:"*/ + strlen(pkg) + 1 /*'#'*/ + strlen(rel_path) + 1;
+    char *out = spm_malloc(len);
+    snprintf(out, len, "npm:%s#%s", pkg, rel_path);
+    return out;
+}
+
+// Install all npm-package references. Walks node_modules/<pkg>/ for matching
+// .md files, symlinks each into .agents/references/<name>/REFERENCE.md, and
+// records one lockfile entry per file with the installed npm version in the
+// SHA column.
+static int install_npm_references(const InstallOptions *opts) {
+    const char *pkg = opts->spec;
+    if (!pkg || !pkg[0]) {
+        log_error("--npm requires a package name");
+        return -1;
+    }
+
+    char *pkg_root = path_join("node_modules", pkg);
+    if (!dir_exists(pkg_root)) {
+        log_error("npm package not found: %s (run `npm install %s` first)",
+                  pkg_root, pkg);
+        spm_free(pkg_root);
+        return -1;
+    }
+
+    char *pjson = path_join(pkg_root, "package.json");
+    char *version = read_json_string_field(pjson, "version");
+    spm_free(pjson);
+    if (!version) {
+        log_error("Cannot read version from %s/package.json", pkg_root);
+        spm_free(pkg_root);
+        return -1;
+    }
+
+    log_info("Installing npm references for %s@%s...", pkg, version);
+
+    NpmFileList *files = npm_collect_files(pkg_root, opts->include_paths,
+                                           opts->include_count);
+    if (files->count == 0) {
+        log_error("No matching .md files found in %s", pkg_root);
+        npm_file_list_free(files);
+        spm_free(version);
+        spm_free(pkg_root);
+        return -1;
+    }
+
+    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
+    char *now = lockfile_now_iso8601();
+    int installed = 0;
+
+    for (int i = 0; i < files->count; i++) {
+        const char *rel = files->files[i].rel_path;
+        char *name = npm_ref_name(pkg, rel);
+        if (npm_install_one(name, pkg, rel) != 0) {
+            spm_free(name);
+            continue;
+        }
+
+        char *source = npm_lock_source(pkg, rel);
+        lockfile_upsert(lf, name, source, "-", version, now,
+                        false /* pinned */, LOCK_REF);
+        log_info("  %s", name);
+        spm_free(source);
+        spm_free(name);
+        installed++;
+    }
+
+    if (lockfile_save(lf) != 0) {
+        log_error("Warning: failed to write %s", lf->path);
+    }
+    if (agentsmd_rebuild_block(lf) != 0) {
+        log_error("Warning: failed to update %s", agentsmd_target_path());
+    }
+    lockfile_free(lf);
+    spm_free(now);
+    spm_free(version);
+    spm_free(pkg_root);
+    npm_file_list_free(files);
+
+    log_info("Installed %d npm reference(s).", installed);
+    return installed > 0 ? 0 : -1;
+}
+
+// Install a reference from an extracted source tree. Picks README.md (default)
+// or a specific SKILL.md (when opts->skill_name is set), strips frontmatter
+// for skill-based refs, writes .agents/references/<name>/REFERENCE.md, records
+// it in the lockfile with LOCK_REF, and rebuilds the AGENTS.md/CLAUDE.md
+// references block.
+static int install_reference_from_extracted(const char *extracted,
+                                            PackageSpec *spec,
+                                            const InstallOptions *opts,
+                                            const ResolvedRef *resolved) {
+    // Decide which skill (if any) to extract. CLI sets opts->skill_name; the
+    // lockfile-driven path encodes it in the spec as "owner/repo#skill".
+    const char *skill_name = opts->skill_name;
+    if (!skill_name) skill_name = spec->skill_in_spec;
+
+    // Decide the install name. The lockfile-driven path passes name_override
+    // so the recorded name is preserved across reinstall/update.
+    char *name = NULL;
+    if (opts->name_override && opts->name_override[0]) {
+        name = str_dup(opts->name_override);
+    } else {
+        name = default_ref_name(spec, skill_name);
+    }
+
+    // Locate the source markdown file.
+    char *body = NULL;
+    if (skill_name) {
+        SkillList *skills = discover_skills(extracted);
+        if (!skills || skills->count == 0) {
+            log_error("No skills found in package");
+            if (skills) skill_list_free(skills);
+            spm_free(name);
+            return -1;
+        }
+        Skill *match = NULL;
+        for (int i = 0; i < skills->count; i++) {
+            if (strcmp(skills->skills[i].name, skill_name) == 0) {
+                match = &skills->skills[i];
+                break;
+            }
+        }
+        if (!match) {
+            log_error("Skill '%s' not found in package", skill_name);
+            log_info("Available skills:");
+            skill_list_print(skills);
+            skill_list_free(skills);
+            spm_free(name);
+            return -1;
+        }
+        body = skill_strip_yaml_frontmatter(match->skill_file);
+        skill_list_free(skills);
+    } else {
+        char *readme = find_readme_in_tree(extracted);
+        if (!readme) {
+            log_error("No README found in repository root");
+            spm_free(name);
+            return -1;
+        }
+        body = skill_strip_yaml_frontmatter(readme);  // README rarely has fm; no-op
+        spm_free(readme);
+    }
+
+    if (!body) {
+        log_error("Failed to read reference source");
+        spm_free(name);
+        return -1;
+    }
+
+    // Write .agents/references/<name>/REFERENCE.md
+    char *ref_dir = path_join(LOCAL_REFERENCES_DIR, name);
+    char *ref_file = path_join(ref_dir, "REFERENCE.md");
+
+    if (write_string_to_file(ref_file, body) != 0) {
+        spm_free(body);
+        spm_free(ref_file);
+        spm_free(ref_dir);
+        spm_free(name);
+        return -1;
+    }
+    log_info("  %s", ref_file);
+
+    // Build the lockfile source string. For skill-based refs we encode the
+    // skill name as "owner/repo#skill" so update/reinstall round-trips.
+    size_t source_len = strlen(spec->owner) + strlen(spec->repo) + 2;
+    if (skill_name) source_len += strlen(skill_name) + 1;
+    char *source = spm_malloc(source_len);
+    if (skill_name) {
+        snprintf(source, source_len, "%s/%s#%s", spec->owner, spec->repo, skill_name);
+    } else {
+        snprintf(source, source_len, "%s/%s", spec->owner, spec->repo);
+    }
+
+    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
+    char *now = lockfile_now_iso8601();
+    bool effective_pinned = opts->override_pinned ? opts->pinned : spec->ref_explicit;
+    const char *sha = (resolved && resolved->sha) ? resolved->sha : "-";
+    lockfile_upsert(lf, name, source, spec->ref, sha, now,
+                    effective_pinned, LOCK_REF);
+
+    if (lockfile_save(lf) != 0) {
+        log_error("Warning: failed to write %s", lf->path);
+    }
+
+    if (agentsmd_rebuild_block(lf) != 0) {
+        log_error("Warning: failed to update %s", agentsmd_target_path());
+    }
+
+    lockfile_free(lf);
+    spm_free(now);
+    spm_free(source);
+    spm_free(body);
+    spm_free(ref_file);
+    spm_free(ref_dir);
+    spm_free(name);
+    return 0;
+}
+
 int install_package(const InstallOptions *opts) {
     if (!opts || !opts->spec) {
         log_error("No package specified");
         return -1;
+    }
+
+    // npm references take a completely separate path — no spec parsing,
+    // no tarball download, just walk node_modules.
+    if (opts->is_npm) {
+        return install_npm_references(opts);
     }
 
     // Parse package spec
@@ -408,6 +744,17 @@ int install_package(const InstallOptions *opts) {
         spm_free(root_dir);
     } else {
         extracted_path = str_dup(temp_dir);
+    }
+
+    // Reference install: short-circuit before skill discovery / agent loop.
+    if (opts->is_reference) {
+        int rc = install_reference_from_extracted(extracted_path, spec, opts, resolved);
+        spm_free(extracted_path);
+        remove_dir_recursive(temp_dir);
+        spm_free(temp_dir);
+        resolved_ref_free(resolved);
+        package_spec_free(spec);
+        return rc;
     }
 
     // Discover skills in extracted package
@@ -562,7 +909,7 @@ int install_package(const InstallOptions *opts) {
 
             const char *sha = (resolved && resolved->sha) ? resolved->sha : "-";
             lockfile_upsert(lf, skills->skills[i].name, source, spec->ref, sha, now,
-                            effective_pinned);
+                            effective_pinned, LOCK_SKILL);
 
             spm_free(canonical);
         }
@@ -589,10 +936,64 @@ int install_package(const InstallOptions *opts) {
     return 0;
 }
 
+// Remove a reference: delete .agents/references/<name>/, drop the lockfile
+// entry, and rebuild the AGENTS.md/CLAUDE.md block.
+static int remove_reference(const RemoveOptions *opts) {
+    char *ref_dir = path_join(LOCAL_REFERENCES_DIR, opts->skill_name);
+    bool present = dir_exists(ref_dir);
+
+    if (!present) {
+        log_info("Reference '%s' has no on-disk directory; cleaning lockfile entry",
+                 opts->skill_name);
+    }
+
+    if (!opts->yes) {
+        printf("\nRemove reference '%s'? [y/N] ", opts->skill_name);
+        fflush(stdout);
+        char response[16];
+        if (fgets(response, sizeof(response), stdin)) {
+            char *trimmed = str_trim(response);
+            if (trimmed[0] != 'y' && trimmed[0] != 'Y') {
+                log_info("Removal cancelled.");
+                spm_free(ref_dir);
+                return 0;
+            }
+        }
+    }
+
+    if (present && remove_dir_recursive(ref_dir) != 0) {
+        log_error("Failed to remove %s", ref_dir);
+    }
+    spm_free(ref_dir);
+
+    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
+    if (lockfile_remove_entry(lf, opts->skill_name)) {
+        if (lockfile_save(lf) != 0) {
+            log_error("Warning: failed to update %s", lf->path);
+        }
+    }
+    if (agentsmd_rebuild_block(lf) != 0) {
+        log_error("Warning: failed to update %s", agentsmd_target_path());
+    }
+    lockfile_free(lf);
+
+    log_info("Removed reference '%s'.", opts->skill_name);
+    return 0;
+}
+
 int remove_skill(const RemoveOptions *opts) {
     if (!opts || !opts->skill_name) {
         log_error("No skill specified");
         return -1;
+    }
+
+    // Branch on lockfile kind first: references aren't symlinked into agents.
+    if (!opts->global) {
+        Lockfile *lf_peek = lockfile_load(LOCAL_AGENTS_DIR);
+        LockEntry *e = lockfile_find(lf_peek, opts->skill_name);
+        bool is_ref = (e && e->kind == LOCK_REF);
+        lockfile_free(lf_peek);
+        if (is_ref) return remove_reference(opts);
     }
 
     // Get target agents
@@ -705,6 +1106,7 @@ typedef struct {
     char *ref;
     char *sha;
     bool pinned;
+    LockKind kind;
 } EntrySnapshot;
 
 static EntrySnapshot *snapshot_entries(const Lockfile *lf, int *out_count) {
@@ -717,6 +1119,7 @@ static EntrySnapshot *snapshot_entries(const Lockfile *lf, int *out_count) {
         snap[i].ref = str_dup(lf->entries[i].ref);
         snap[i].sha = str_dup(lf->entries[i].sha);
         snap[i].pinned = lf->entries[i].pinned;
+        snap[i].kind = lf->entries[i].kind;
     }
     return snap;
 }
@@ -749,6 +1152,46 @@ int install_from_lockfile(const InstallOptions *base_opts) {
 
     int ok = 0, fail = 0, fresh = 0, present = 0;
     for (int i = 0; i < count; i++) {
+        // npm: refs are symlinks into node_modules/. Recreate the single
+        // symlink for this entry — no walk, no version refresh (the lockfile
+        // version is the source of truth on reinstall; `rosie update` is the
+        // command that re-walks and reconciles).
+        if (source_is_npm(snap[i].source)) {
+            char *pkg = NULL;
+            char *file_rel = NULL;
+            source_npm_split(snap[i].source, &pkg, &file_rel);
+            if (!pkg || !file_rel) {
+                log_error("malformed npm source: %s", snap[i].source);
+                spm_free(pkg);
+                spm_free(file_rel);
+                fail++;
+                continue;
+            }
+            char *abs_target = path_join("node_modules", pkg);
+            char *abs_file = path_join(abs_target, file_rel);
+            if (!file_exists(abs_file)) {
+                log_info("warning: %s npm package missing locally, skipping (%s)",
+                         snap[i].skill_name, abs_file);
+                spm_free(abs_target);
+                spm_free(abs_file);
+                spm_free(pkg);
+                spm_free(file_rel);
+                continue;
+            }
+            spm_free(abs_target);
+            spm_free(abs_file);
+
+            if (npm_install_one(snap[i].skill_name, pkg, file_rel) == 0) {
+                ok++;
+                fresh++;
+            } else {
+                fail++;
+            }
+            spm_free(pkg);
+            spm_free(file_rel);
+            continue;
+        }
+
         // file:// entries point at a tracked working-tree directory. Don't
         // run them through install_package — there's nothing to download and
         // no sensible "spec_str" to feed back into the parser. Just relink.
@@ -769,6 +1212,42 @@ int install_from_lockfile(const InstallOptions *base_opts) {
             opts.pinned = false;
             if (install_local(canonical_rel, &opts) == 0) ok++;
             else fail++;
+            continue;
+        }
+
+        // Reference entries: source already encodes "owner/repo[#skill]". We
+        // pass it through install_package as a reference install, preserving
+        // the recorded install name via name_override.
+        if (snap[i].kind == LOCK_REF) {
+            char *ref_file = path_join(LOCAL_REFERENCES_DIR, snap[i].skill_name);
+            char *ref_md = path_join(ref_file, "REFERENCE.md");
+            bool ref_present = file_exists(ref_md);
+            spm_free(ref_md);
+            spm_free(ref_file);
+
+            if (ref_present) {
+                log_info("%s: already at %s (reference)",
+                         snap[i].skill_name, snap[i].ref);
+                present++;
+                ok++;
+                continue;
+            }
+
+            char *spec_str = build_spec_string(snap[i].source, snap[i].ref);
+            InstallOptions opts = *base_opts;
+            opts.spec = spec_str;
+            opts.skill_name = NULL;  // resolved from spec->skill_in_spec
+            opts.name_override = snap[i].skill_name;
+            opts.is_reference = true;
+            opts.yes = true;
+            opts.list_only = false;
+            opts.global = false;
+            opts.override_pinned = true;
+            opts.pinned = snap[i].pinned;
+
+            if (install_package(&opts) == 0) { ok++; fresh++; }
+            else fail++;
+            spm_free(spec_str);
             continue;
         }
 
@@ -831,6 +1310,13 @@ int install_from_lockfile(const InstallOptions *base_opts) {
     }
 
     free_snapshots(snap, count);
+
+    // Refresh the AGENTS.md / CLAUDE.md references block from the final
+    // lockfile state. Cheap even when nothing changed.
+    Lockfile *lf_final = lockfile_load(LOCAL_AGENTS_DIR);
+    agentsmd_rebuild_block(lf_final);
+    lockfile_free(lf_final);
+
     if (fail > 0) {
         log_error("Reinstalled %d (%d already present, %d fresh), %d failed",
                   ok, present, fresh, fail);
@@ -843,6 +1329,126 @@ int install_from_lockfile(const InstallOptions *base_opts) {
                  ok, present, fresh);
     }
     return 0;
+}
+
+// Reconcile a single npm package: read installed version, walk default scope
+// + previously recorded files, drop dead refs, add new ones, refresh symlinks
+// and the version column on every entry. Updates the in-memory lockfile in
+// place; caller is responsible for save + agentsmd_rebuild.
+static void update_npm_package(Lockfile *lf, const char *pkg,
+                               const char **prev_files, int prev_count,
+                               int *advanced, int *unchanged, int *failed) {
+    char *pkg_root = path_join("node_modules", pkg);
+    if (!dir_exists(pkg_root)) {
+        log_error("update: npm package missing locally: %s", pkg_root);
+        spm_free(pkg_root);
+        (*failed)++;
+        return;
+    }
+    char *pjson = path_join(pkg_root, "package.json");
+    char *version = read_json_string_field(pjson, "version");
+    spm_free(pjson);
+    if (!version) {
+        log_error("update: cannot read version from %s/package.json", pkg_root);
+        spm_free(pkg_root);
+        (*failed)++;
+        return;
+    }
+
+    // Default scope, then add any previously recorded files (so user-included
+    // paths from earlier installs survive the update without needing --include
+    // again).
+    NpmFileList *current = npm_collect_files(pkg_root, NULL, 0);
+    for (int i = 0; i < prev_count; i++) {
+        char *abs = path_join(pkg_root, prev_files[i]);
+        bool exists = file_exists(abs);
+        spm_free(abs);
+        if (!exists) continue;
+        bool present = false;
+        for (int j = 0; j < current->count; j++) {
+            if (strcmp(current->files[j].rel_path, prev_files[i]) == 0) {
+                present = true;
+                break;
+            }
+        }
+        if (present) continue;
+        if (current->count >= current->capacity) {
+            current->capacity = current->capacity == 0 ? 8 : current->capacity * 2;
+            current->files = spm_realloc(current->files,
+                                         (size_t)current->capacity * sizeof(NpmFile));
+        }
+        current->files[current->count++].rel_path = str_dup(prev_files[i]);
+    }
+
+    // Drop lockfile entries for this pkg whose file is no longer in the
+    // current set.
+    for (int i = 0; i < lf->count; ) {
+        const LockEntry *e = &lf->entries[i];
+        if (e->kind != LOCK_REF || !source_is_npm(e->source)) { i++; continue; }
+        char *epkg = NULL, *efile = NULL;
+        source_npm_split(e->source, &epkg, &efile);
+        if (!epkg || strcmp(epkg, pkg) != 0) {
+            spm_free(epkg); spm_free(efile);
+            i++;
+            continue;
+        }
+        bool keep = false;
+        for (int j = 0; j < current->count; j++) {
+            if (efile && strcmp(current->files[j].rel_path, efile) == 0) {
+                keep = true;
+                break;
+            }
+        }
+        spm_free(epkg);
+        if (keep) {
+            spm_free(efile);
+            i++;
+            continue;
+        }
+        log_info("%s: removed (no longer in package)", e->skill_name);
+        char *dir = path_join(LOCAL_REFERENCES_DIR, e->skill_name);
+        remove_dir_recursive(dir);
+        spm_free(dir);
+        char *dead_name = str_dup(e->skill_name);
+        spm_free(efile);
+        lockfile_remove_entry(lf, dead_name);
+        spm_free(dead_name);
+        // Don't advance i — the array shifted left.
+    }
+
+    // Ensure every file in current set has a fresh symlink + lockfile row.
+    char *now = lockfile_now_iso8601();
+    for (int j = 0; j < current->count; j++) {
+        const char *rel = current->files[j].rel_path;
+        char *name = npm_ref_name(pkg, rel);
+        char *source = npm_lock_source(pkg, rel);
+
+        LockEntry *prev = lockfile_find(lf, name);
+        bool was_present = (prev != NULL);
+        bool version_changed = was_present && strcmp(prev->sha, version) != 0;
+
+        npm_install_one(name, pkg, rel);
+        lockfile_upsert(lf, name, source, "-", version, now, false, LOCK_REF);
+
+        if (!was_present) {
+            log_info("%s: added", name);
+            (*advanced)++;
+        } else if (version_changed) {
+            (*advanced)++;
+        } else {
+            (*unchanged)++;
+        }
+
+        spm_free(source);
+        spm_free(name);
+    }
+    spm_free(now);
+
+    log_info("%s: refreshed at %s (%d file(s))", pkg, version, current->count);
+
+    spm_free(version);
+    spm_free(pkg_root);
+    npm_file_list_free(current);
 }
 
 int update_skills(const InstallOptions *base_opts, const char *only_skill) {
@@ -859,8 +1465,82 @@ int update_skills(const InstallOptions *base_opts, const char *only_skill) {
 
     int matched = 0, advanced = 0, unchanged = 0, failed = 0;
 
+    // npm pre-pass: group entries by package and reconcile each package
+    // exactly once. Reload the lockfile in this scope so we can mutate it.
+    {
+        Lockfile *npm_lf = lockfile_load(LOCAL_AGENTS_DIR);
+        char **seen_pkgs = NULL;
+        int seen_count = 0, seen_cap = 0;
+
+        for (int i = 0; i < count; i++) {
+            if (only_skill && strcmp(snap[i].skill_name, only_skill) != 0) continue;
+            if (!source_is_npm(snap[i].source)) continue;
+
+            char *pkg = NULL;
+            char *file_rel = NULL;
+            source_npm_split(snap[i].source, &pkg, &file_rel);
+            spm_free(file_rel);
+            if (!pkg) continue;
+
+            bool already_done = false;
+            for (int s = 0; s < seen_count; s++) {
+                if (strcmp(seen_pkgs[s], pkg) == 0) { already_done = true; break; }
+            }
+            if (already_done) {
+                spm_free(pkg);
+                matched++;
+                continue;
+            }
+
+            // Collect this package's previously recorded files for unioning.
+            char **prev_files = NULL;
+            int prev_count = 0, prev_cap = 0;
+            for (int k = 0; k < count; k++) {
+                if (!source_is_npm(snap[k].source)) continue;
+                char *kpkg = NULL, *kfile = NULL;
+                source_npm_split(snap[k].source, &kpkg, &kfile);
+                if (kpkg && kfile && strcmp(kpkg, pkg) == 0) {
+                    if (prev_count >= prev_cap) {
+                        prev_cap = prev_cap == 0 ? 4 : prev_cap * 2;
+                        prev_files = spm_realloc(prev_files,
+                                                 (size_t)prev_cap * sizeof(char *));
+                    }
+                    prev_files[prev_count++] = kfile;
+                    kfile = NULL;
+                }
+                spm_free(kpkg);
+                spm_free(kfile);
+            }
+
+            update_npm_package(npm_lf, pkg,
+                               (const char **)prev_files, prev_count,
+                               &advanced, &unchanged, &failed);
+            for (int p = 0; p < prev_count; p++) spm_free(prev_files[p]);
+            spm_free(prev_files);
+
+            // Mark seen.
+            if (seen_count >= seen_cap) {
+                seen_cap = seen_cap == 0 ? 4 : seen_cap * 2;
+                seen_pkgs = spm_realloc(seen_pkgs, (size_t)seen_cap * sizeof(char *));
+            }
+            seen_pkgs[seen_count++] = pkg;  // ownership transferred
+            matched++;
+        }
+
+        if (lockfile_save(npm_lf) != 0) {
+            log_error("Warning: failed to write %s", npm_lf->path);
+        }
+        lockfile_free(npm_lf);
+        for (int s = 0; s < seen_count; s++) spm_free(seen_pkgs[s]);
+        spm_free(seen_pkgs);
+    }
+
     for (int i = 0; i < count; i++) {
         if (only_skill && strcmp(snap[i].skill_name, only_skill) != 0) continue;
+
+        // npm entries handled in the pre-pass above.
+        if (source_is_npm(snap[i].source)) continue;
+
         matched++;
 
         // Local links track the working tree directly — there's no upstream
@@ -923,12 +1603,22 @@ int update_skills(const InstallOptions *base_opts, const char *only_skill) {
         char *new_spec = build_spec_string(snap[i].source, r->ref);
         InstallOptions opts = *base_opts;
         opts.spec = new_spec;
-        opts.skill_name = snap[i].skill_name;
         opts.yes = true;
         opts.list_only = false;
         opts.global = false;
         opts.override_pinned = true;
         opts.pinned = snap[i].pinned;  // preserve pin status across update
+
+        if (snap[i].kind == LOCK_REF) {
+            // Skill name is encoded in the source ("owner/repo#skill") and
+            // recovered by package_spec_parse; preserve the recorded install
+            // name explicitly.
+            opts.skill_name = NULL;
+            opts.name_override = snap[i].skill_name;
+            opts.is_reference = true;
+        } else {
+            opts.skill_name = snap[i].skill_name;
+        }
 
         int rc = install_package(&opts);
         spm_free(new_spec);
@@ -939,6 +1629,12 @@ int update_skills(const InstallOptions *base_opts, const char *only_skill) {
     }
 
     free_snapshots(snap, count);
+
+    // Refresh the AGENTS.md / CLAUDE.md references block from the final
+    // lockfile state.
+    Lockfile *lf_final = lockfile_load(LOCAL_AGENTS_DIR);
+    agentsmd_rebuild_block(lf_final);
+    lockfile_free(lf_final);
 
     if (only_skill && matched == 0) {
         log_error("Skill '%s' not found in lockfile", only_skill);
@@ -966,12 +1662,15 @@ int list_installed_skills(void) {
         const LockEntry *e = &lf->entries[i];
         const char *name_open = use_color ? "\033[1;34m" : "";
         const char *name_close = use_color ? "\033[0m" : "";
+        const char *kind_tag = e->kind == LOCK_REF ? "[ref]  " : "[skill]";
         if (source_is_local(e->source)) {
-            printf("  %s%s%s  %s  (linked)\n",
+            printf("  %s  %s%s%s  %s  (linked)\n",
+                   kind_tag,
                    name_open, e->skill_name, name_close,
                    source_local_path(e->source));
         } else {
-            printf("  %s%s%s  %s@%s  %s\n",
+            printf("  %s  %s%s%s  %s@%s  %s\n",
+                   kind_tag,
                    name_open, e->skill_name, name_close,
                    e->source, e->ref,
                    e->pinned ? "(pinned)" : "");

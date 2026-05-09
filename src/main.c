@@ -16,9 +16,13 @@ static void print_usage(const char *prog) {
     printf("  install [<owner/repo>|<./path>] [skill]\n");
     printf("                                Install skills from a GitHub repository, or symlink a\n");
     printf("                                local directory (./path, /path, ~/path) into .agents/skills/.\n");
+    printf("                                With --ref, installs the repo's README.md (or a specific\n");
+    printf("                                SKILL.md via --skill) as a reference under .agents/references/\n");
+    printf("                                and indexes it in AGENTS.md (or CLAUDE.md, if that's the file\n");
+    printf("                                the project already uses).\n");
     printf("                                With no args, reinstalls from .agents/rosie.lock\n");
     printf("  update [skill-name]           Re-resolve lockfile entries; reinstall those that changed\n");
-    printf("  remove <skill-name>           Remove an installed skill\n");
+    printf("  remove <skill-name>           Remove an installed skill or reference\n");
     printf("  list [owner/repo]             List skills in a repo (or installed skills if no arg)\n");
     printf("  agents                  List detected agents\n");
     printf("  help                    Show this help message\n");
@@ -26,6 +30,11 @@ static void print_usage(const char *prog) {
     printf("  -a, --agent <name>      Target specific agent (can be repeated)\n");
     printf("  -g, --global            Install to home directory (~/.agent/skills/)\n");
     printf("  -l, --local             Install to current directory (default, uses symlinks)\n");
+    printf("  -r, --ref               Install as a reference (README or SKILL.md) instead of a skill\n");
+    printf("  -s, --skill <name>      For --ref: install a specific SKILL.md as the reference\n");
+    printf("  -n, --name <name>       For --ref: override the default install name (owner-repo[-skill])\n");
+    printf("  -N, --npm               For --ref: source from node_modules/<pkg>/ (.md files)\n");
+    printf("  -I, --include <path>    For --npm: file or directory to include (repeatable; replaces default scope)\n");
     printf("  -y, --yes               Skip confirmation prompt\n");
     printf("  -v, --verbose           Enable verbose output\n");
     printf("  -h, --help              Show this help message\n");
@@ -36,6 +45,11 @@ static void print_usage(const char *prog) {
     printf("  %s install owner/repo -a claude -a cursor\n", prog);
     printf("  %s install owner/repo@v1.0.0\n", prog);
     printf("  %s install ./skills/my-custom-skill   # symlink a local skill\n", prog);
+    printf("  %s install vercel/next.js --ref       # install README as a reference\n", prog);
+    printf("  %s install anthropics/skills --ref --skill pdf   # install a SKILL.md as a reference\n", prog);
+    printf("  %s install react --ref --npm                # symlink react's README + docs/ from node_modules\n", prog);
+    printf("  %s install @tanstack/react-query --ref --npm    # scoped npm package\n", prog);
+    printf("  %s install zod --ref --npm --include README.md  # only README\n", prog);
     printf("  %s install                    # reinstall from .agents/rosie.lock\n", prog);
     printf("  %s update                     # update all lockfile entries\n", prog);
     printf("  %s update slack-gif-creator   # update one skill\n", prog);
@@ -73,6 +87,11 @@ static int cmd_install(int argc, char **argv, bool list_only) {
         {"agent",   required_argument, 0, 'a'},
         {"global",  no_argument,       0, 'g'},
         {"local",   no_argument,       0, 'l'},
+        {"ref",     no_argument,       0, 'r'},
+        {"skill",   required_argument, 0, 's'},
+        {"name",    required_argument, 0, 'n'},
+        {"npm",     no_argument,       0, 'N'},
+        {"include", required_argument, 0, 'I'},
         {"yes",     no_argument,       0, 'y'},
         {"verbose", no_argument,       0, 'v'},
         {"help",    no_argument,       0, 'h'},
@@ -86,11 +105,14 @@ static int cmd_install(int argc, char **argv, bool list_only) {
     // Collect agent names
     const char *agent_names[32];
     int agent_count = 0;
+    // Collect --include paths for --npm
+    const char *include_paths[32];
+    int include_count = 0;
 
     int opt;
     optind = 1;  // Reset getopt
 
-    while ((opt = getopt_long(argc, argv, "a:glycvh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "a:glrs:n:NI:yvh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'a':
                 if (agent_count < 32) {
@@ -102,6 +124,23 @@ static int cmd_install(int argc, char **argv, bool list_only) {
                 break;
             case 'l':
                 opts.global = false;
+                break;
+            case 'r':
+                opts.is_reference = true;
+                break;
+            case 's':
+                opts.skill_name = optarg;
+                break;
+            case 'n':
+                opts.name_override = optarg;
+                break;
+            case 'N':
+                opts.is_npm = true;
+                break;
+            case 'I':
+                if (include_count < 32) {
+                    include_paths[include_count++] = optarg;
+                }
                 break;
             case 'y':
                 opts.yes = true;
@@ -116,6 +155,35 @@ static int cmd_install(int argc, char **argv, bool list_only) {
                 return 1;
         }
     }
+
+    if (opts.is_reference && opts.global) {
+        log_error("--ref is project-scoped; --global is not supported");
+        return 1;
+    }
+    if (opts.name_override && !opts.is_reference) {
+        log_error("--name is only valid with --ref");
+        return 1;
+    }
+    if (opts.is_npm) {
+        if (!opts.is_reference) {
+            log_error("--npm requires --ref");
+            return 1;
+        }
+        if (opts.name_override) {
+            log_error("--name is not supported with --npm; names are derived per file");
+            return 1;
+        }
+        if (opts.skill_name) {
+            log_error("--skill does not apply to --npm packages");
+            return 1;
+        }
+    }
+    if (include_count > 0 && !opts.is_npm) {
+        log_error("--include only applies to --npm");
+        return 1;
+    }
+    opts.include_paths = include_count > 0 ? include_paths : NULL;
+    opts.include_count = include_count;
 
     if (optind >= argc) {
         // Zero-arg list: show what's recorded in the project's lockfile.
@@ -132,11 +200,29 @@ static int cmd_install(int argc, char **argv, bool list_only) {
     }
 
     opts.spec = argv[optind];
-    opts.skill_name = (optind + 1 < argc) ? argv[optind + 1] : NULL;
+    // Positional second arg is treated as the skill name (legacy form).
+    // The --skill flag wins if both are supplied.
+    if (!opts.skill_name && optind + 1 < argc) {
+        opts.skill_name = argv[optind + 1];
+    }
     opts.agent_names = agent_count > 0 ? agent_names : NULL;
     opts.agent_count = agent_count;
 
-    // Initialize curl
+    if (opts.is_npm) {
+        // Reject @version in spec (npm versions are read from package.json).
+        // Skip the leading '@' for scoped packages so we don't false-match.
+        const char *scan = opts.spec;
+        if (scan[0] == '@') scan++;
+        if (strchr(scan, '@') != NULL) {
+            log_error("--npm does not accept @version; the version is read from "
+                      "node_modules/%.*s/package.json",
+                      (int)(strchr(scan, '@') - opts.spec), opts.spec);
+            return 1;
+        }
+    }
+
+    // npm refs don't need curl (no network), but keep the global init for
+    // the GitHub paths.
     if (download_init() != 0) {
         return 1;
     }

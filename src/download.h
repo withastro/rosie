@@ -9,6 +9,10 @@ typedef struct {
     char *repo;
     char *ref;            // Branch or tag, defaults to "main" if not given
     bool ref_explicit;    // true if user passed @ref; false if defaulted
+    // Optional skill name embedded in the spec via "owner/repo#skill". Used
+    // by reference installs to round-trip through the lockfile source field.
+    // NULL when no #skill suffix was present.
+    char *skill_in_spec;
     // For hand-authored skills checked into the same repo. When true, owner/
     // repo/ref are unused and local_path holds a "./<rel>" path relative to
     // the repo root.
@@ -16,8 +20,9 @@ typedef struct {
     char *local_path;
 } PackageSpec;
 
-// Parse "owner/repo[@ref]" or a local path (starting with ./, ../, /, ~/, or
-// equal to "."), or a "file://<rel-path>" lockfile source, into a PackageSpec.
+// Parse "owner/repo[#skill][@ref]" or a local path (starting with ./, ../, /,
+// ~/, or equal to "."), or a "file://<rel-path>" lockfile source, into a
+// PackageSpec.
 PackageSpec *package_spec_parse(const char *spec);
 void package_spec_free(PackageSpec *spec);
 
@@ -26,6 +31,14 @@ void package_spec_free(PackageSpec *spec);
 // an owner/repo download.
 bool source_is_local(const char *source);
 const char *source_local_path(const char *source);
+
+// "npm:<pkg>#<rel-path>" marks a reference symlinked from the user's
+// node_modules/<pkg>/<rel-path>. <pkg> may include a "@scope/" prefix.
+bool source_is_npm(const char *source);
+const char *source_npm_after_prefix(const char *source);
+// Split "npm:<pkg>#<file>" into freshly allocated <pkg> and <file>. Either
+// out-pointer may be NULL. *file_out is left NULL when the source has no '#'.
+void source_npm_split(const char *source, char **pkg_out, char **file_out);
 
 typedef enum {
     REF_KIND_BRANCH,   // archive/refs/heads/<ref>.tar.gz

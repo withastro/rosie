@@ -22,6 +22,11 @@ SkillList *discover_skills(const char *base_dir);
 // Parse SKILL.md frontmatter
 Skill *parse_skill_file(const char *skill_md_path);
 
+// Read a markdown file and return its body with the leading "---" YAML
+// frontmatter block stripped (if any). Returns the full file contents when no
+// frontmatter is present. NULL on read error. Caller frees.
+char *skill_strip_yaml_frontmatter(const char *path);
+
 // Free resources
 void skill_free(Skill *skill);
 void skill_list_free(SkillList *list);

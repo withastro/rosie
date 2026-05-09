@@ -117,19 +117,28 @@ rosie install owner/repo -a claude -a cursor
 rosie install owner/repo@v1.0.0
 rosie install owner/repo@develop
 
+# Install a repo's README as a reference (see "References" below)
+rosie install colinhacks/zod --ref
+
+# Install a specific SKILL.md as a reference (frontmatter stripped)
+rosie install anthropics/skills --ref --skill pdf
+
+# Override the default install name
+rosie install owner/repo --ref --name custom-name
+
 # Reinstall everything in .agents/rosie.lock (e.g. on a fresh clone)
 rosie install
 
 # Update lockfile entries — auto entries advance to latest, pinned entries
-# refresh their SHA only
+# refresh their SHA only. Works for both skills and references.
 rosie update
 rosie update slack-gif-creator       # Update one skill
 
-# List skills (no arg = installed in this project; with arg = available in repo)
+# List skills + references (no arg = installed in this project; with arg = available in repo)
 rosie list
 rosie list owner/repo
 
-# Remove an installed skill
+# Remove an installed skill or reference
 rosie remove skill-name
 rosie remove skill-name -a claude    # Remove from specific agent
 
@@ -140,18 +149,110 @@ rosie install owner/repo -y
 rosie agents
 ```
 
+### References
+
+References are an alternative to skills, inspired by Vercel's
+[finding](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals)
+that an always-loaded `AGENTS.md` index pointing at on-demand reference docs
+outperformed `SKILL.md`-style progressive disclosure on their evals.
+
+A reference is a single markdown doc copied into
+`.agents/references/<name>/REFERENCE.md` and indexed by title in a Rosie-managed
+`<references>` block in your project's agent-instructions file. Rosie picks
+`AGENTS.md` if it exists, otherwise `CLAUDE.md`, otherwise creates `AGENTS.md`.
+
+```bash
+rosie install vercel/next.js --ref
+```
+
+Adds a block to `AGENTS.md` (or `CLAUDE.md`):
+
+```markdown
+<!-- rosie:references:start -->
+<references>
+- [Next.js — The React Framework](./.agents/references/vercel-next.js/REFERENCE.md)
+</references>
+<!-- rosie:references:end -->
+```
+
+The agent loads referenced files on demand based on the title. Titles are
+re-extracted from the first H1 of each `REFERENCE.md` on every rebuild — edit
+the H1 in the file, and the next install/update/remove will pick up the new
+title. Default install name is `owner-repo` (or `owner-repo-skillname` when
+combined with `--skill`); override with `--name`.
+
+References use the same lockfile, the same `pin`/`auto` semantics, and the
+same `update` command as skills. They're not symlinked into agent dirs —
+`AGENTS.md` is the index, so the doc is project-scoped (`--global` is rejected
+for `--ref`).
+
+#### npm packages as references
+
+Many libraries ship rich docs as `.md` files inside their npm package
+(TanStack, tRPC, Vercel libs, Next.js, etc.). Rosie can install those
+straight from your `node_modules/`:
+
+```bash
+rosie install react --ref --npm
+rosie install @tanstack/react-query --ref --npm
+
+# Override the default file scope (repeatable; replaces the default):
+rosie install react --ref --npm --include README.md
+rosie install zod --ref --npm --include README.md --include guides
+```
+
+What gets installed:
+
+- **Default scope**: `README.md` at the package root (case-insensitive) plus
+  every `*.md` under `docs/` (recursive). Nested `node_modules/` are always
+  excluded.
+- **One reference per matched file**, named `<pkg-slug>-<file-slug>` with
+  slashes turned into dashes. Examples:
+  - `react/README.md` → `react-readme`
+  - `react/docs/hooks.md` → `react-docs-hooks`
+  - `@tanstack/react-query/README.md` → `tanstack-react-query-readme`
+- **Symlinks** from `.agents/references/<name>/REFERENCE.md` into
+  `node_modules/<pkg>/<file>` — no copying, so file edits flow through
+  immediately.
+- **Lockfile**: `source` is `npm:<pkg>#<rel-path>`, the SHA column holds the
+  installed npm version (read from `node_modules/<pkg>/package.json`),
+  `ref` is `-`, `pin` is always `auto` (npm pinning is `package.json`'s
+  job).
+
+`rosie update` re-reads each npm package's version, walks the file set
+again (default scope plus any previously recorded files), drops dead
+refs, adds new ones, and refreshes the version on every entry. Run it
+after `npm update` to keep the agent in sync.
+
+`--name`, `--skill`, `--global`, and `@version` in the spec are all
+rejected with `--npm`.
+
 ### Lockfile
 
-When you install a skill locally, rosie records what it installed in `.agents/rosie.lock`:
+When you install a skill or reference locally, rosie records what it installed
+in `.agents/rosie.lock`:
 
 ```
-slack-gif-creator anthropics/skills main 5128e1865d670f5d6c9cef000e6dfc4e951fb5b9 2026-05-02T14:32:18Z auto
-theme-factory     anthropics/skills v1.0.0 a1b2c3d4e5f6789abcdef0123456789abcdef012  2026-05-02T14:35:01Z pin
+# rosie-lock v1
+slack-gif-creator   anthropics/skills          main    5128e186...  2026-05-02T14:32:18Z auto skill
+theme-factory       anthropics/skills          v1.0.0  a1b2c3d4...  2026-05-02T14:35:01Z pin  skill
+vercel-next.js      vercel/next.js             v15.1.0 9f8e7d6c...  2026-05-09T10:00:00Z auto ref
+acme-widgets        acme/widget-skills#widgets v2.3.0  1234abcd...  2026-05-09T10:05:00Z pin  ref
 ```
 
-One line per skill: `<name> <source> <ref> <sha> <installed-at> <pin|auto>`. The lockfile is small, line-oriented (so it diffs cleanly), and meant to be checked into git.
+One line per entry: `<name> <source> <ref> <sha> <installed-at> <pin|auto> <skill|ref>`.
+The lockfile is small, line-oriented (so it diffs cleanly), and meant to be
+checked into git.
 
-`auto` entries were installed without an explicit ref — `rosie update` will advance them to the highest semver tag upstream. `pin` entries were installed with an explicit `@ref` and `rosie update` will leave the ref alone, only refreshing the SHA.
+`auto` entries were installed without an explicit ref — `rosie update` will
+advance them to the highest semver tag upstream. `pin` entries were installed
+with an explicit `@ref` and `rosie update` will leave the ref alone, only
+refreshing the SHA.
+
+The trailing `skill|ref` field marks the install kind. Reference entries from
+a specific SKILL.md encode the skill name in the source as `owner/repo#skill`
+so reinstall and update round-trip cleanly. Legacy lockfiles without a header
+are read as v0 (skill-only) and rewritten as v1 on the next mutating command.
 
 ### Options
 
@@ -160,6 +261,11 @@ One line per skill: `<name> <source> <ref> <sha> <installed-at> <pin|auto>`. The
 | `-a, --agent <name>` | Install to specific agent (can be repeated) |
 | `-g, --global` | Install globally to `~/.agent/skills/` (copies files) |
 | `-l, --local` | Install locally (default, uses symlinks) |
+| `-r, --ref` | Install as a reference (README, or a SKILL.md via `--skill`) |
+| `-s, --skill <name>` | With `--ref`: install a specific SKILL.md as the reference |
+| `-n, --name <name>` | With `--ref`: override the default install name |
+| `-N, --npm` | With `--ref`: source from `node_modules/<pkg>/` (`.md` files) |
+| `-I, --include <path>` | With `--npm`: file or directory to include (repeatable; replaces default scope) |
 | `-y, --yes` | Skip confirmation prompt |
 | `-v, --verbose` | Enable verbose output |
 

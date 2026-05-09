@@ -59,9 +59,9 @@
         </div>
       </section>
 
-      <div class="section-rule">
+      <div class="section-rule" id="features">
         <span class="dashes">──</span>
-        <span class="label">what rosie does</span>
+        <a href="#features" class="label">what rosie does</a>
         <span class="dashes-grow"></span>
       </div>
 
@@ -91,9 +91,9 @@
       </section>
 
       <section class="demo" data-demo hidden>
-        <div class="section-rule">
+        <div class="section-rule" id="demo">
           <span class="dashes">──</span>
-          <span class="label">demo</span>
+          <a href="#demo" class="label">demo</a>
           <span class="dashes-grow"></span>
         </div>
         <div class="demo-frame">
@@ -105,7 +105,7 @@
 
       <div class="section-rule" id="install">
         <span class="dashes">──</span>
-        <span class="label">install</span>
+        <a href="#install" class="label">install</a>
         <span class="dashes-grow"></span>
       </div>
 
@@ -159,9 +159,9 @@ EOF
         </div>
       </section>
 
-      <div class="section-rule">
+      <div class="section-rule" id="lockfile">
         <span class="dashes">──</span>
-        <span class="label">lockfile</span>
+        <a href="#lockfile" class="label">lockfile</a>
         <span class="dashes-grow"></span>
       </div>
 
@@ -191,6 +191,74 @@ EOF
             <span class="val"><code>rosie install ./my-skill</code> writes a <code>file://</code> entry · hand-authored skills in your repo travel with it</span>
           </li>
         </ul>
+      </section>
+
+      <div class="section-rule" id="references">
+        <span class="dashes">──</span>
+        <a href="#references" class="label">references</a>
+        <span class="dashes-grow"></span>
+      </div>
+
+      <section class="references">
+        <p class="lockfile-intro">references are an alternative to skills — markdown docs the agent loads on demand. inspired by <a href="https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals">vercel's finding</a> that an always-loaded <code>AGENTS.md</code> index outperformed <code>SKILL.md</code>-style discovery on their evals.</p>
+
+<pre class="term-block"><span class="prompt">$</span> rosie install vercel/next.js --ref
+<span class="comment"># installs the repo's README.md as a reference</span>
+
+<span class="prompt">$</span> rosie install anthropics/skills --ref --skill pdf
+<span class="comment"># installs a specific SKILL.md (frontmatter stripped)</span>
+
+<span class="prompt">$</span> rosie install owner/repo --ref --name custom-name
+<span class="comment"># override the default install name</span></pre>
+
+        <p class="lockfile-intro">the doc lands at <code>.agents/references/&lt;name&gt;/REFERENCE.md</code>, and an entry is appended to a rosie-managed block in the project's agent-instructions file:</p>
+
+<pre class="term-block"><span class="comment"># AGENTS.md (or CLAUDE.md, whichever the project already uses)</span>
+
+&lt;!-- rosie:references:start --&gt;
+&lt;references&gt;
+- [Next.js — The React Framework](./.agents/references/vercel-next.js/REFERENCE.md)
+- [PDF Processing Guide](./.agents/references/anthropics-skills-pdf/REFERENCE.md)
+&lt;/references&gt;
+&lt;!-- rosie:references:end --&gt;</pre>
+
+        <ul class="bullet-list">
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">target file</strong>
+            <span class="val"><code>AGENTS.md</code> if present · else <code>CLAUDE.md</code> if present · else creates <code>AGENTS.md</code></span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">title</strong>
+            <span class="val">re-extracted from the first H1 of each REFERENCE.md on every rebuild · falls back to install name</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">default name</strong>
+            <span class="val"><code>owner-repo</code> · or <code>owner-repo-skill</code> with <code>--skill</code> · override with <code>--name</code></span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">same lockfile</strong>
+            <span class="val">recorded with kind <code>ref</code> · same <code>pin</code>/<code>auto</code> semantics as skills · same <code>rosie update</code></span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">project-scoped</strong>
+            <span class="val">no symlinks into agent dirs · <code>--global</code> is rejected (the index file is per-project)</span>
+          </li>
+        </ul>
+
+        <p class="lockfile-intro" style="margin-top:1.25rem;">npm packages with <code>--npm</code> — symlink <code>.md</code> files straight from <code>node_modules/&lt;pkg&gt;/</code>. tracks the installed version (read from <code>package.json</code>); <code>rosie update</code> re-walks and reconciles after <code>npm update</code>.</p>
+
+<pre class="term-block"><span class="prompt">$</span> rosie install react --ref --npm
+<span class="comment"># symlinks README.md + docs/**/*.md → .agents/references/react-*</span>
+
+<span class="prompt">$</span> rosie install @tanstack/react-query --ref --npm
+
+<span class="prompt">$</span> rosie install zod --ref --npm --include README.md
+<span class="comment"># --include replaces the default scope (repeatable)</span></pre>
       </section>
 
       <div class="section-rule">

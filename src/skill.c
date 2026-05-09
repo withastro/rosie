@@ -154,6 +154,71 @@ Skill *parse_skill_file(const char *skill_md_path) {
     return skill;
 }
 
+// Read entire file into a freshly-allocated, NUL-terminated buffer.
+// Returns NULL on any error.
+static char *read_file_to_string(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long len = ftell(fp);
+    if (len < 0) {
+        fclose(fp);
+        return NULL;
+    }
+    rewind(fp);
+
+    char *buf = spm_malloc((size_t)len + 1);
+    size_t read = fread(buf, 1, (size_t)len, fp);
+    fclose(fp);
+    buf[read] = '\0';
+    return buf;
+}
+
+char *skill_strip_yaml_frontmatter(const char *path) {
+    char *contents = read_file_to_string(path);
+    if (!contents) return NULL;
+
+    // Frontmatter must start with "---" on the first line (allow leading
+    // whitespace? The skill parser doesn't, so we don't either).
+    if (strncmp(contents, "---", 3) != 0 ||
+        (contents[3] != '\n' && contents[3] != '\r')) {
+        return contents;
+    }
+
+    // Find the closing "---" on its own line.
+    char *p = contents + 3;
+    while (*p == '\r' || *p == '\n') p++;
+
+    while (*p) {
+        char *line_start = p;
+        char *line_end = strchr(p, '\n');
+        size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
+
+        // Trim trailing \r for CRLF files.
+        size_t check_len = line_len;
+        if (check_len > 0 && line_start[check_len - 1] == '\r') check_len--;
+
+        if (check_len == 3 && strncmp(line_start, "---", 3) == 0) {
+            // Skip past the closing delimiter and any trailing newlines.
+            char *body = line_end ? line_end + 1 : line_start + line_len;
+            char *body_dup = str_dup(body);
+            spm_free(contents);
+            return body_dup;
+        }
+
+        if (!line_end) break;
+        p = line_end + 1;
+    }
+
+    // Unterminated frontmatter — fall back to returning the original contents.
+    log_debug("Unterminated frontmatter in %s", path);
+    return contents;
+}
+
 // Check if a directory contains SKILL.md
 static Skill *check_skill_dir(const char *dir_path) {
     char *skill_file = path_join(dir_path, "SKILL.md");

@@ -111,11 +111,19 @@
 
       <section class="install">
         <div class="tabs" role="tablist" aria-label="install method">
+          <button class="tab" role="tab" data-tab="npm">[ npm ]</button>
           <button class="tab active" role="tab" data-tab="brew">[ macos ]</button>
           <button class="tab" role="tab" data-tab="aur">[ arch ]</button>
           <button class="tab" role="tab" data-tab="apt">[ debian ]</button>
           <button class="tab" role="tab" data-tab="pkg">[ freebsd ]</button>
           <button class="tab" role="tab" data-tab="src">[ source ]</button>
+        </div>
+
+        <div class="tab-panel" data-panel="npm">
+<pre class="term-block"><span class="prompt">$</span> npx rosie-skills install owner/repo
+<span class="comment"># or install globally</span>
+<span class="prompt">$</span> npm install -g rosie-skills
+<span class="prompt">$</span> rosie-skills install owner/repo<button class="copy-btn" data-copy>[ copy ]</button></pre>
         </div>
 
         <div class="tab-panel active" data-panel="brew">

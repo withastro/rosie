@@ -113,6 +113,12 @@ jobs:
         with:
           files: rosie-${{ needs.create-release.outputs.version }}.pkg
 
+      - name: Upload rosie binary for npm
+        uses: actions/upload-artifact@v4
+        with:
+          name: rosie-freebsd-x64
+          path: rosie
+
       - name: Commit and push gh-pages
         run: |
           cd pages
@@ -217,3 +223,111 @@ jobs:
           # Rebase to pick up any concurrent push from freebsd job (different subdir, no conflict)
           git pull --rebase origin gh-pages
           git push
+
+  npm-binary-linux-x64:
+    needs: create-release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libarchive-dev pkg-config
+
+      - name: Build rosie
+        run: make release
+
+      - name: Upload rosie binary for npm
+        uses: actions/upload-artifact@v4
+        with:
+          name: rosie-linux-x64
+          path: rosie
+
+  npm-binary-darwin-arm64:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build rosie
+        # No Homebrew: rely on macOS system libcurl/libarchive (Makefile falls
+        # back to `-lcurl -larchive` when pkg-config can't find them). Resulting
+        # binary depends only on macOS system libraries.
+        run: make release
+
+      - name: Verify binary has no Homebrew dependencies
+        run: |
+          if otool -L rosie | grep -qE '/opt/homebrew|/usr/local/Cellar'; then
+            echo "ERROR: binary links against Homebrew libs — not portable"
+            otool -L rosie
+            exit 1
+          fi
+          otool -L rosie
+
+      - name: Upload rosie binary for npm
+        uses: actions/upload-artifact@v4
+        with:
+          name: rosie-darwin-arm64
+          path: rosie
+
+  npm-publish:
+    needs: [create-release, npm-binary-linux-x64, npm-binary-darwin-arm64, freebsd]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download linux-x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: rosie-linux-x64
+          path: npm/rosie-skills-linux-x64/bin
+
+      - name: Download darwin-arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: rosie-darwin-arm64
+          path: npm/rosie-skills-darwin-arm64/bin
+
+      - name: Download freebsd-x64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: rosie-freebsd-x64
+          path: npm/rosie-skills-freebsd-x64/bin
+
+      - name: Make binaries executable
+        run: chmod +x npm/rosie-skills-*/bin/rosie
+
+      - name: Set versions across all packages
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          for dir in rosie-skills rosie-skills-linux-x64 rosie-skills-darwin-arm64 rosie-skills-freebsd-x64; do
+            (cd "npm/$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
+          done
+          node -e "
+            const fs = require('fs');
+            const p = 'npm/rosie-skills/package.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            for (const k of Object.keys(j.optionalDependencies || {})) {
+              j.optionalDependencies[k] = process.env.VERSION;
+            }
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          "
+
+      - name: Publish platform packages
+        run: |
+          for dir in rosie-skills-linux-x64 rosie-skills-darwin-arm64 rosie-skills-freebsd-x64; do
+            (cd "npm/$dir" && npm publish)
+          done
+
+      - name: Publish main package
+        run: cd npm/rosie-skills && npm publish

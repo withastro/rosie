@@ -1,0 +1,26 @@
+{
+  "name": "rosie-skills",
+  "version": "0.0.0",
+  "description": "A fast, cross-platform package manager for AI agent skills",
+  "bin": {
+    "rosie-skills": "bin/rosie-skills.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matthewp/rosie.git"
+  },
+  "homepage": "https://github.com/matthewp/rosie",
+  "license": "BSD-3-Clause",
+  "author": "Matthew Phillips",
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "rosie-skills-linux-x64": "0.0.0",
+    "rosie-skills-darwin-arm64": "0.0.0",
+    "rosie-skills-freebsd-x64": "0.0.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "rosie-skills-freebsd-x64",
+  "version": "0.0.0",
+  "description": "FreeBSD x64 binary for rosie-skills",
+  "os": [
+    "freebsd"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matthewp/rosie.git"
+  },
+  "homepage": "https://github.com/matthewp/rosie",
+  "license": "BSD-3-Clause",
+  "author": "Matthew Phillips"
+}

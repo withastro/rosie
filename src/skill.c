@@ -299,28 +299,20 @@ SkillList *discover_skills(const char *base_dir) {
 
 void skill_print(const Skill *skill) {
     if (!skill) return;
-
-    // Use color if outputting to a terminal
-    int use_color = isatty(fileno(stdout));
-
-    if (use_color) {
-        printf("  \033[1;34m%s\033[0m", skill->name);  // Bold blue
-    } else {
-        printf("  %s", skill->name);
-    }
-
+    // Routed through log_info so the API can silence/capture it. Loses ANSI
+    // color vs the prior direct printf; acceptable tradeoff for unification.
     if (skill->description) {
-        printf(" - %s", skill->description);
+        log_info("  %s - %s", skill->name, skill->description);
+    } else {
+        log_info("  %s", skill->name);
     }
-    printf("\n");
 }
 
 void skill_list_print(const SkillList *list) {
     if (!list || list->count == 0) {
-        printf("  (no skills found)\n");
+        log_info("  (no skills found)");
         return;
     }
-
     for (int i = 0; i < list->count; i++) {
         skill_print(&list->skills[i]);
     }

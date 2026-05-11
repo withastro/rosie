@@ -30,6 +30,10 @@ typedef struct {
     bool is_npm;
     const char **include_paths;
     int include_count;
+    // When true, install proceeds but doesn't touch .agents/rosie.lock.
+    // Useful for ad-hoc installs that shouldn't persist into the lockfile.
+    // Mirrors CLI --no-lockfile.
+    bool skip_lockfile;
 } InstallOptions;
 
 typedef struct {
@@ -38,6 +42,7 @@ typedef struct {
     int agent_count;
     bool global;                // Remove from global (default) or local
     bool yes;                   // Skip confirmation prompts
+    bool skip_lockfile;         // Don't update rosie.lock. Mirrors --no-lockfile.
 } RemoveOptions;
 
 // Main install function

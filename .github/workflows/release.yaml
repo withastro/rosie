@@ -366,6 +366,15 @@ jobs:
             fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
           "
 
+      - name: Compile TypeScript for rosie-skills
+        # main package ships dist/, produced from src/ via tsc. devDeps include
+        # typescript + @types/node; this step also catches type errors before
+        # publish.
+        run: |
+          cd npm/rosie-skills
+          npm install
+          npm run build
+
       - name: Publish platform packages
         run: |
           for dir in rosie-skills-linux-x64 rosie-skills-darwin-arm64 rosie-skills-freebsd-x64; do

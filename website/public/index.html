@@ -305,6 +305,200 @@ EOF
         <p class="lockfile-intro" style="margin-top:.75rem;">if none exist, rosie creates <code>AGENTS.md</code>.</p>
       </section>
 
+      <div class="section-rule" id="js-api">
+        <span class="dashes">──</span>
+        <a href="#js-api" class="label">js api</a>
+        <span class="dashes-grow"></span>
+      </div>
+
+      <section class="js-api">
+        <p class="lockfile-intro">rosie is also a typed JavaScript library. install <code>rosie-skills</code> from npm and call it from node directly — no spawning, no parsing stdout. backed by the same C internals as the CLI, compiled to wasm and inlined in the package.</p>
+
+<pre class="term-block"><span class="prompt">$</span> npm install rosie-skills</pre>
+
+        <p class="lockfile-intro">the package is esm-only. use a namespace import:</p>
+
+<pre class="term-block"><span class="comment">// every function returns a Promise. failures throw Error with a descriptive message.</span>
+import * as rosie from 'rosie-skills';
+
+await rosie.install('anthropics/skills');
+const skills = await rosie.list();
+const agents = await rosie.agents();</pre>
+
+        <h3 class="sub-label">install</h3>
+        <p class="lockfile-intro">every cli flag has a corresponding option. pass nothing extra and rosie does the right thing: install the whole repo, auto-detect agents, write to <code>.agents/skills/</code>.</p>
+
+<pre class="term-block"><span class="comment">// one skill, specific agents</span>
+await rosie.install('anthropics/skills', {
+  skill: 'pdf',
+  agent: ['claude', 'cursor'],
+});
+
+<span class="comment">// install as a reference (.md doc indexed in AGENTS.md / CLAUDE.md / …)</span>
+await rosie.install('vercel/next.js', { ref: true });
+
+<span class="comment">// reference with a custom name</span>
+await rosie.install('anthropics/skills', {
+  ref: true,
+  skill: 'pdf',
+  name: 'pdf-handling',
+});
+
+<span class="comment">// from an npm package — symlinks .md files out of node_modules/</span>
+await rosie.install('react', {
+  ref: true,
+  npm: true,
+  include: ['README.md'],
+});
+
+<span class="comment">// global install (~/.agent/skills/ instead of ./.agents/skills/)</span>
+await rosie.install('anthropics/skills', { global: true });
+
+<span class="comment">// ad-hoc install, don't record in rosie.lock</span>
+await rosie.install('anthropics/skills', { lockfile: false });
+
+<span class="comment">// install into a different project directory</span>
+await rosie.install('anthropics/skills', { cwd: '/path/to/project' });
+
+<span class="comment">// reinstall everything in .agents/rosie.lock — no args needed</span>
+await rosie.installFromLockfile();</pre>
+
+        <h3 class="sub-label">references</h3>
+        <p class="lockfile-intro">pass <code>ref: true</code> to install a markdown doc into <code>.agents/references/&lt;name&gt;/REFERENCE.md</code> and append it to the project's agent-instructions file (<code>AGENTS.md</code> · <code>CLAUDE.md</code> · <code>GEMINI.md</code> · <code>.github/copilot-instructions.md</code>, first one found — else <code>AGENTS.md</code> is created).</p>
+
+<pre class="term-block"><span class="comment">// the repo's README.md becomes the reference</span>
+await rosie.install('vercel/next.js', { ref: true });
+
+<span class="comment">// pick a specific SKILL.md (frontmatter stripped) — source is recorded</span>
+<span class="comment">// as owner/repo#skill so rosie.update() round-trips correctly</span>
+await rosie.install('anthropics/skills', {
+  ref: true,
+  skill: 'pdf',
+});
+
+<span class="comment">// override the default install name (default: owner-repo[-skill])</span>
+await rosie.install('anthropics/skills', {
+  ref: true,
+  skill: 'docx',
+  name: 'word-docs',
+});
+
+<span class="comment">// from an npm package — symlinks .md files out of node_modules/&lt;pkg&gt;/</span>
+<span class="comment">// (implies ref: true; tracks the installed version)</span>
+await rosie.install('react', { ref: true, npm: true });
+
+<span class="comment">// scope the npm walk — replaces the default README+docs/**.md set</span>
+await rosie.install('zod', {
+  ref: true,
+  npm: true,
+  include: ['README.md'],
+});</pre>
+
+        <p class="lockfile-intro">title in the index is re-extracted from each file's first H1 on every rebuild; falls back to the install name. references show up in <code>rosie.list()</code> with <code>isReference: true</code>:</p>
+
+<pre class="term-block">const all = await rosie.list();
+const refs = all.filter(s =&gt; s.isReference);
+<span class="comment">// [
+//   { name: 'vercel-next.js', source: 'vercel/next.js',
+//     ref: 'main', sha: '...', isReference: true },
+//   ...
+// ]</span></pre>
+
+        <h3 class="sub-label">list, agents</h3>
+        <p class="lockfile-intro">read-only commands; structured results, no parsing.</p>
+
+<pre class="term-block">const skills = await rosie.list();
+<span class="comment">// [
+//   { name: 'pdf', source: 'anthropics/skills', ref: 'main',
+//     sha: 'f458cee31...', isReference: false },
+//   ...
+// ]</span>
+
+const agents = await rosie.agents();
+<span class="comment">// [
+//   { name: 'claude', display: 'Claude Code',
+//     detected: true, installPath: '/home/me/.claude/skills' },
+//   { name: 'cursor', display: 'Cursor',
+//     detected: false, installPath: null },
+//   ...
+// ]</span></pre>
+
+        <h3 class="sub-label">remove, update</h3>
+
+<pre class="term-block"><span class="comment">// remove a skill from all agents (or pass agent: ['claude'] to scope)</span>
+await rosie.remove('pdf');
+
+<span class="comment">// update everything in rosie.lock</span>
+await rosie.update();
+
+<span class="comment">// update just one entry</span>
+await rosie.update('pdf');</pre>
+
+        <h3 class="sub-label">logging</h3>
+        <p class="lockfile-intro">silent by default. pass <code>onLog</code> to observe progress. failures still throw — <code>onLog</code> is purely for visibility.</p>
+
+<pre class="term-block">await rosie.install('anthropics/skills', {
+  onLog: ({ level, message }) =&gt; {
+    if (level === 'error') console.error(message);
+    else if (level === 'info') console.log(message);
+    <span class="comment">// 'warn' and 'debug' levels also available</span>
+  },
+});</pre>
+
+        <h3 class="sub-label">error handling</h3>
+
+<pre class="term-block">try {
+  await rosie.install('owner/nonexistent-repo');
+} catch (err) {
+  <span class="comment">// err.message has the underlying log_error from the C side</span>
+  console.error('install failed:', err.message);
+}</pre>
+
+        <h3 class="sub-label">cwd and lockfile</h3>
+        <p class="lockfile-intro">every command accepts a <code>cwd</code> option, equivalent to <code>cd</code>'ing into that directory before running. <code>process.cwd()</code> is restored on exit. mirrors the cli's <code>--cwd</code> flag.</p>
+
+<pre class="term-block">await rosie.install('owner/repo', { cwd: '/path/to/project' });
+
+<span class="comment">// cli equivalent</span>
+<span class="comment">// $ rosie --cwd /path/to/project install owner/repo</span></pre>
+
+        <p class="lockfile-intro">pass <code>lockfile: false</code> on <code>install</code>, <code>remove</code>, or <code>update</code> to skip reads and writes to <code>.agents/rosie.lock</code>. files still land on disk; nothing is recorded. mirrors the cli's <code>--no-lockfile</code>.</p>
+
+<pre class="term-block">await rosie.install('anthropics/skills', { lockfile: false });
+
+<span class="comment">// cli equivalent</span>
+<span class="comment">// $ rosie install anthropics/skills --no-lockfile</span></pre>
+
+        <h3 class="sub-label">how it runs</h3>
+        <ul class="bullet-list">
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">in-process wasm</strong>
+            <span class="val">the api always uses the wasm build · no subprocess spawning · synchronous from the c side via asyncify</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">node 18+</strong>
+            <span class="val">uses built-in <code>fetch</code> for http · node <code>fs</code> for file i/o via NODERAWFS</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">esm-only</strong>
+            <span class="val"><code>"type": "module"</code> · use <code>import</code> · no <code>require</code></span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">typescript types</strong>
+            <span class="val">ships <code>.d.ts</code> alongside <code>.js</code> · works in any editor that resolves npm types</span>
+          </li>
+          <li>
+            <span class="bullet">▸</span>
+            <strong class="key">cli still works the same</strong>
+            <span class="val"><code>npx rosie-skills install …</code> uses the native binary when available, falls back to wasm otherwise</span>
+          </li>
+        </ul>
+      </section>
+
       <div class="section-rule">
         <span class="dashes-grow"></span>
       </div>

@@ -32,9 +32,27 @@ void *spm_realloc(void *ptr, size_t size);
 void spm_free(void *ptr);
 
 // Logging
+typedef enum {
+    LOG_LEVEL_ERROR = 0,
+    LOG_LEVEL_WARN  = 1,
+    LOG_LEVEL_INFO  = 2,
+    LOG_LEVEL_DEBUG = 3,
+} LogLevel;
+
 void log_info(const char *fmt, ...);
 void log_error(const char *fmt, ...);
 void log_debug(const char *fmt, ...);
+
+// When set, log_* functions route messages through this callback instead of
+// writing to stdout/stderr. Pass NULL to restore default CLI behavior. Used
+// by the API entry points to surface log events to JS.
+typedef void (*log_callback_t)(LogLevel level, const char *message);
+void set_log_callback(log_callback_t cb);
+
+// log_error also stashes its last formatted message in a static buffer so API
+// entry points can construct an error envelope from it. Cleared per-call.
+const char *last_error_message(void);
+void clear_last_error(void);
 
 extern bool g_verbose;
 

@@ -250,11 +250,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build rosie
-        # No Homebrew: rely on macOS system libcurl/libarchive (Makefile falls
-        # back to `-lcurl -larchive` when pkg-config can't find them). Resulting
-        # binary depends only on macOS system libraries.
-        run: make release
+      - name: Install libarchive (headers + static lib)
+        # macOS SDK ships curl.h + libcurl.dylib but not libarchive. Use brew
+        # for the headers and the .a, link libarchive statically so the binary
+        # has no Homebrew runtime dep. libcurl stays dynamic against system.
+        run: brew install libarchive
+
+      - name: Build rosie with static libarchive
+        run: |
+          PFX="$(brew --prefix libarchive)"
+          STATIC_LIBS="$(PKG_CONFIG_PATH=$PFX/lib/pkgconfig pkg-config --static --libs libarchive | sed "s|-larchive|$PFX/lib/libarchive.a|")"
+          make release \
+            CFLAGS="-O2 -I$PFX/include -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE" \
+            LDFLAGS="-lcurl $STATIC_LIBS"
 
       - name: Verify binary has no Homebrew dependencies
         run: |

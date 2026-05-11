@@ -250,18 +250,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install libarchive (headers + static lib)
-        # macOS SDK ships curl.h + libcurl.dylib but not libarchive. Use brew
-        # for the headers and the .a, link libarchive statically so the binary
-        # has no Homebrew runtime dep. libcurl stays dynamic against system.
-        run: brew install libarchive
+      - name: Install libarchive and its static deps
+        # macOS SDK ships curl.h + libcurl/libbz2/libz/libiconv but not libarchive
+        # nor its compression deps (zstd, lz4, b2, lzma, expat). Brew them all,
+        # link statically so the binary has no Homebrew runtime dep.
+        run: brew install libarchive zstd lz4 libb2 xz expat
 
       - name: Build rosie with static libarchive
         run: |
-          PFX="$(brew --prefix libarchive)"
-          STATIC_LIBS="$(PKG_CONFIG_PATH=$PFX/lib/pkgconfig pkg-config --static --libs libarchive | sed "s|-larchive|$PFX/lib/libarchive.a|")"
+          PFX_LA="$(brew --prefix libarchive)"
+          # Replace each -l<dep> in pkg-config's static link line with the
+          # absolute path to the .a so it gets baked into the binary instead of
+          # picked up dynamically from /opt/homebrew at runtime.
+          STATIC_LIBS="$(PKG_CONFIG_PATH=$PFX_LA/lib/pkgconfig pkg-config --static --libs libarchive \
+            | sed "s|-larchive|$PFX_LA/lib/libarchive.a|" \
+            | sed "s|-lexpat|$(brew --prefix expat)/lib/libexpat.a|" \
+            | sed "s|-llzma|$(brew --prefix xz)/lib/liblzma.a|" \
+            | sed "s|-lzstd|$(brew --prefix zstd)/lib/libzstd.a|" \
+            | sed "s|-llz4|$(brew --prefix lz4)/lib/liblz4.a|" \
+            | sed "s|-lb2|$(brew --prefix libb2)/lib/libb2.a|")"
           make release \
-            CFLAGS="-O2 -I$PFX/include -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE" \
+            CFLAGS="-O2 -I$PFX_LA/include -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE" \
             LDFLAGS="-lcurl $STATIC_LIBS"
 
       - name: Verify binary has no Homebrew dependencies

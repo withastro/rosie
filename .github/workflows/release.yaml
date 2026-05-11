@@ -288,8 +288,28 @@ jobs:
           name: rosie-darwin-arm64
           path: rosie
 
+  wasm-build:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build rosie.wasm via emscripten
+        # docker is preinstalled on ubuntu runners; the build script wraps the
+        # same emcc invocation that `make wasm` uses locally with podman.
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src \
+            docker.io/emscripten/emsdk:latest \
+            ./wasm/build.sh
+
+      - name: Upload WASM artifact for npm-publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: rosie-wasm
+          path: npm/rosie-skills/wasm/
+
   npm-publish:
-    needs: [create-release, npm-binary-linux-x64, npm-binary-darwin-arm64, freebsd]
+    needs: [create-release, npm-binary-linux-x64, npm-binary-darwin-arm64, freebsd, wasm-build]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -319,6 +339,12 @@ jobs:
         with:
           name: rosie-freebsd-x64
           path: npm/rosie-skills-freebsd-x64/bin
+
+      - name: Download WASM fallback
+        uses: actions/download-artifact@v4
+        with:
+          name: rosie-wasm
+          path: npm/rosie-skills/wasm
 
       - name: Make binaries executable
         run: chmod +x npm/rosie-skills-*/bin/rosie

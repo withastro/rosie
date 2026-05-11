@@ -3,9 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
+#endif
 
-// --- in-memory curl write target ---
+// --- in-memory fetch target ---
 
 typedef struct {
     char *data;
@@ -13,6 +15,7 @@ typedef struct {
     size_t capacity;
 } MemBuf;
 
+#ifndef __EMSCRIPTEN__
 static size_t mem_write_cb(void *contents, size_t size, size_t nmemb, void *userp) {
     MemBuf *buf = (MemBuf *)userp;
     size_t chunk = size * nmemb;
@@ -73,6 +76,37 @@ static int fetch_refs(const char *owner, const char *repo, MemBuf *out) {
     }
     return 0;
 }
+#else
+// WASM: dispatches through wasm_fetch_to_buffer (implemented in wasm/http-lib.js).
+extern int wasm_fetch_to_buffer(const char *url, const char *accept_header,
+                                char **out_buf, size_t *out_len);
+
+static int fetch_refs(const char *owner, const char *repo, MemBuf *out) {
+    char url[1024];
+    snprintf(url, sizeof(url),
+             "https://github.com/%s/%s/info/refs?service=git-upload-pack",
+             owner, repo);
+
+    out->data = NULL;
+    out->size = 0;
+    out->capacity = 0;
+
+    log_debug("Fetching refs: %s", url);
+    int status = wasm_fetch_to_buffer(url,
+        "application/x-git-upload-pack-advertisement",
+        &out->data, &out->size);
+    if (status < 0) {
+        log_debug("info/refs fetch failed: transport error");
+        return -1;
+    }
+    if (status >= 400) {
+        log_debug("info/refs fetch failed: HTTP %d", status);
+        return -1;
+    }
+    out->capacity = out->size;
+    return 0;
+}
+#endif // __EMSCRIPTEN__
 
 // --- pkt-line parsing ---
 

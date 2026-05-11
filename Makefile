@@ -17,7 +17,10 @@ TARGET = rosie
 # Debug build by default
 CFLAGS += -g -O0
 
-.PHONY: all clean release install uninstall
+PODMAN ?= podman
+EMSDK_IMAGE ?= docker.io/emscripten/emsdk:latest
+
+.PHONY: all clean release install uninstall wasm wasm-clean
 
 all: $(TARGET)
 
@@ -42,6 +45,14 @@ install: $(TARGET)
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+
+# WASM fallback build. Runs inside the emscripten/emsdk container via podman so
+# the host doesn't need emsdk installed. Outputs to npm/rosie-skills/wasm/.
+wasm:
+	$(PODMAN) run --rm --userns=keep-id -v $(CURDIR):/src -w /src $(EMSDK_IMAGE) ./wasm/build.sh
+
+wasm-clean:
+	$(PODMAN) run --rm -v $(CURDIR):/src -w /src $(EMSDK_IMAGE) rm -rf /src/build/wasm /src/npm/rosie-skills/wasm
 
 # Dependencies (auto-generated would be better, but this works)
 $(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(SRC_DIR)/install.h $(SRC_DIR)/agent.h $(SRC_DIR)/util.h

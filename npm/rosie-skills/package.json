@@ -6,7 +6,8 @@
     "rosie-skills": "bin/rosie-skills.js"
   },
   "files": [
-    "bin"
+    "bin",
+    "wasm"
   ],
   "repository": {
     "type": "git",

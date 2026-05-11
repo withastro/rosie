@@ -5,13 +5,16 @@
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
+#endif
 
 #define LOCAL_SOURCE_PREFIX "file://"
 #define LOCAL_SOURCE_PREFIX_LEN 7
 #define NPM_SOURCE_PREFIX "npm:"
 #define NPM_SOURCE_PREFIX_LEN 4
 
+#ifndef __EMSCRIPTEN__
 static bool curl_initialized = false;
 
 int download_init(void) {
@@ -32,6 +35,7 @@ void download_cleanup(void) {
         curl_initialized = false;
     }
 }
+#endif // !__EMSCRIPTEN__
 
 bool source_is_local(const char *source) {
     if (!source) return false;
@@ -263,6 +267,7 @@ char *build_tarball_url(const PackageSpec *spec, RefKind kind) {
     return url;
 }
 
+#ifndef __EMSCRIPTEN__
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
     FILE *fp = (FILE *)userp;
     return fwrite(contents, size, nmemb, fp);
@@ -378,3 +383,4 @@ int download_package_tarball(const PackageSpec *spec, const char *output_path) {
     }
     return 0;
 }
+#endif // !__EMSCRIPTEN__

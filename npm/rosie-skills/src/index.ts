@@ -39,6 +39,16 @@ export interface Agent {
 }
 
 export interface BaseOptions {
+  /**
+   * Run with this directory as the working directory — same as if you `cd`'d
+   * there before invoking the CLI. All relative paths (`.agents/rosie.lock`,
+   * `.agents/skills/`, etc.) resolve against it. Defaults to `process.cwd()`.
+   *
+   * Implementation note: this calls `process.chdir()` for the duration of
+   * the call and restores afterwards. Be mindful of concurrent callers that
+   * depend on `process.cwd()`.
+   */
+  cwd?: string;
   /** Receives progress + error logs as they happen. Silent by default. */
   onLog?: OnLog;
 }
@@ -58,6 +68,11 @@ export interface InstallOptions extends BaseOptions {
   include?: string[];
   /** Install globally to `~/.<agent>/skills/` instead of `./.agents/skills/`. Mirrors `--global`. */
   global?: boolean;
+  /**
+   * When `false`, the install runs but `.agents/rosie.lock` is not read or
+   * written. Defaults to `true`. Mirrors `--no-lockfile`.
+   */
+  lockfile?: boolean;
 }
 
 export interface RemoveOptions extends BaseOptions {
@@ -65,16 +80,39 @@ export interface RemoveOptions extends BaseOptions {
   agent?: string | string[];
   /** Remove from global install. Mirrors `--global`. */
   global?: boolean;
+  /** When `false`, don't update `.agents/rosie.lock`. Mirrors `--no-lockfile`. */
+  lockfile?: boolean;
+}
+
+export interface UpdateOptions extends BaseOptions {
+  /** When `false`, don't write changes back to `.agents/rosie.lock`. Mirrors `--no-lockfile`. */
+  lockfile?: boolean;
+}
+
+// Wrap a call with process.chdir to the requested cwd, restoring on exit.
+async function withCwd<T>(cwd: string | undefined, fn: () => Promise<T>): Promise<T> {
+  if (!cwd) return fn();
+  const orig = process.cwd();
+  process.chdir(cwd);
+  try {
+    return await fn();
+  } finally {
+    process.chdir(orig);
+  }
 }
 
 export async function list(opts: BaseOptions = {}): Promise<Skill[]> {
-  const mod = await loadModule(opts.onLog);
-  return callApi<Skill[]>(mod, "rosie_api_list_installed");
+  return withCwd(opts.cwd, async () => {
+    const mod = await loadModule(opts.onLog);
+    return callApi<Skill[]>(mod, "rosie_api_list_installed");
+  });
 }
 
 export async function agents(opts: BaseOptions = {}): Promise<Agent[]> {
-  const mod = await loadModule(opts.onLog);
-  return callApi<Agent[]>(mod, "rosie_api_agents");
+  return withCwd(opts.cwd, async () => {
+    const mod = await loadModule(opts.onLog);
+    return callApi<Agent[]>(mod, "rosie_api_agents");
+  });
 }
 
 /**
@@ -82,19 +120,23 @@ export async function agents(opts: BaseOptions = {}): Promise<Agent[]> {
  * `.agents/rosie.lock` (matches the CLI's `rosie install` with no args).
  */
 export async function install(spec: string, opts: InstallOptions = {}): Promise<void> {
-  const mod = await loadModule(opts.onLog);
-  const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
-  const includes = (opts.include ?? []).join("\n");
-  await callApi<null>(mod, "rosie_api_install", [
-    spec,
-    opts.skill ?? "",
-    agents,
-    opts.name ?? "",
-    includes,
-    opts.ref ? 1 : 0,
-    opts.npm ? 1 : 0,
-    opts.global ? 1 : 0,
-  ]);
+  return withCwd(opts.cwd, async () => {
+    const mod = await loadModule(opts.onLog);
+    const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
+    const includes = (opts.include ?? []).join("\n");
+    const skipLockfile = opts.lockfile === false ? 1 : 0;
+    await callApi<null>(mod, "rosie_api_install", [
+      spec,
+      opts.skill ?? "",
+      agents,
+      opts.name ?? "",
+      includes,
+      opts.ref ? 1 : 0,
+      opts.npm ? 1 : 0,
+      opts.global ? 1 : 0,
+      skipLockfile,
+    ]);
+  });
 }
 
 /** Reinstall everything from `.agents/rosie.lock`. */
@@ -103,13 +145,24 @@ export async function installFromLockfile(opts: InstallOptions = {}): Promise<vo
 }
 
 export async function remove(skillName: string, opts: RemoveOptions = {}): Promise<void> {
-  const mod = await loadModule(opts.onLog);
-  const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
-  await callApi<null>(mod, "rosie_api_remove", [skillName, agents, opts.global ? 1 : 0]);
+  return withCwd(opts.cwd, async () => {
+    const mod = await loadModule(opts.onLog);
+    const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
+    const skipLockfile = opts.lockfile === false ? 1 : 0;
+    await callApi<null>(mod, "rosie_api_remove", [
+      skillName,
+      agents,
+      opts.global ? 1 : 0,
+      skipLockfile,
+    ]);
+  });
 }
 
 /** Update one skill (by name) or all entries if no name is given. */
-export async function update(skillName?: string, opts: BaseOptions = {}): Promise<void> {
-  const mod = await loadModule(opts.onLog);
-  await callApi<null>(mod, "rosie_api_update", [skillName ?? ""]);
+export async function update(skillName?: string, opts: UpdateOptions = {}): Promise<void> {
+  return withCwd(opts.cwd, async () => {
+    const mod = await loadModule(opts.onLog);
+    const skipLockfile = opts.lockfile === false ? 1 : 0;
+    await callApi<null>(mod, "rosie_api_update", [skillName ?? "", skipLockfile]);
+  });
 }

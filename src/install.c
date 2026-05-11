@@ -257,20 +257,22 @@ static int install_local(const char *canonical_rel, const InstallOptions *opts) 
     }
     log_info("    symlink -> %d agent(s)", linked);
 
-    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
-    char *now = lockfile_now_iso8601();
-    size_t source_len = strlen("file://") + strlen(canonical_rel) + 1;
-    char *source = spm_malloc(source_len);
-    snprintf(source, source_len, "file://%s", canonical_rel);
+    if (!opts->skip_lockfile) {
+        Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
+        char *now = lockfile_now_iso8601();
+        size_t source_len = strlen("file://") + strlen(canonical_rel) + 1;
+        char *source = spm_malloc(source_len);
+        snprintf(source, source_len, "file://%s", canonical_rel);
 
-    lockfile_upsert(lf, skill->name, source, "-", "-", now, true, LOCK_SKILL);
+        lockfile_upsert(lf, skill->name, source, "-", "-", now, true, LOCK_SKILL);
 
-    if (lockfile_save(lf) != 0) {
-        log_error("Warning: failed to write %s", lf->path);
+        if (lockfile_save(lf) != 0) {
+            log_error("Warning: failed to write %s", lf->path);
+        }
+        lockfile_free(lf);
+        spm_free(source);
+        spm_free(now);
     }
-    lockfile_free(lf);
-    spm_free(source);
-    spm_free(now);
 
     log_info("Linked %s.", skill->name);
 
@@ -497,8 +499,8 @@ static int install_npm_references(const InstallOptions *opts) {
         return -1;
     }
 
-    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
-    char *now = lockfile_now_iso8601();
+    Lockfile *lf = opts->skip_lockfile ? NULL : lockfile_load(LOCAL_AGENTS_DIR);
+    char *now = opts->skip_lockfile ? NULL : lockfile_now_iso8601();
     int installed = 0;
 
     for (int i = 0; i < files->count; i++) {
@@ -509,23 +511,27 @@ static int install_npm_references(const InstallOptions *opts) {
             continue;
         }
 
-        char *source = npm_lock_source(pkg, rel);
-        lockfile_upsert(lf, name, source, "-", version, now,
-                        false /* pinned */, LOCK_REF);
+        if (lf) {
+            char *source = npm_lock_source(pkg, rel);
+            lockfile_upsert(lf, name, source, "-", version, now,
+                            false /* pinned */, LOCK_REF);
+            spm_free(source);
+        }
         log_info("  %s", name);
-        spm_free(source);
         spm_free(name);
         installed++;
     }
 
-    if (lockfile_save(lf) != 0) {
-        log_error("Warning: failed to write %s", lf->path);
+    if (lf) {
+        if (lockfile_save(lf) != 0) {
+            log_error("Warning: failed to write %s", lf->path);
+        }
+        if (agentsmd_rebuild_block(lf) != 0) {
+            log_error("Warning: failed to update %s", agentsmd_target_path());
+        }
+        lockfile_free(lf);
+        spm_free(now);
     }
-    if (agentsmd_rebuild_block(lf) != 0) {
-        log_error("Warning: failed to update %s", agentsmd_target_path());
-    }
-    lockfile_free(lf);
-    spm_free(now);
     spm_free(version);
     spm_free(pkg_root);
     npm_file_list_free(files);
@@ -625,23 +631,28 @@ static int install_reference_from_extracted(const char *extracted,
         snprintf(source, source_len, "%s/%s", spec->owner, spec->repo);
     }
 
-    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
-    char *now = lockfile_now_iso8601();
-    bool effective_pinned = opts->override_pinned ? opts->pinned : spec->ref_explicit;
-    const char *sha = (resolved && resolved->sha) ? resolved->sha : "-";
-    lockfile_upsert(lf, name, source, spec->ref, sha, now,
-                    effective_pinned, LOCK_REF);
+    if (!opts->skip_lockfile) {
+        Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
+        char *now = lockfile_now_iso8601();
+        bool effective_pinned = opts->override_pinned ? opts->pinned : spec->ref_explicit;
+        const char *sha = (resolved && resolved->sha) ? resolved->sha : "-";
+        lockfile_upsert(lf, name, source, spec->ref, sha, now,
+                        effective_pinned, LOCK_REF);
 
-    if (lockfile_save(lf) != 0) {
-        log_error("Warning: failed to write %s", lf->path);
+        if (lockfile_save(lf) != 0) {
+            log_error("Warning: failed to write %s", lf->path);
+        }
+
+        if (agentsmd_rebuild_block(lf) != 0) {
+            log_error("Warning: failed to update %s", agentsmd_target_path());
+        }
+
+        lockfile_free(lf);
+        spm_free(now);
+    } else {
+        // skip_lockfile: don't touch rosie.lock or AGENTS.md — the file lands
+        // on disk but isn't recorded.
     }
-
-    if (agentsmd_rebuild_block(lf) != 0) {
-        log_error("Warning: failed to update %s", agentsmd_target_path());
-    }
-
-    lockfile_free(lf);
-    spm_free(now);
     spm_free(source);
     spm_free(body);
     spm_free(ref_file);
@@ -890,8 +901,8 @@ int install_package(const InstallOptions *opts) {
         char *source = spm_malloc(source_len);
         snprintf(source, source_len, "%s/%s", spec->owner, spec->repo);
 
-        Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
-        char *now = lockfile_now_iso8601();
+        Lockfile *lf = opts->skip_lockfile ? NULL : lockfile_load(LOCAL_AGENTS_DIR);
+        char *now = opts->skip_lockfile ? NULL : lockfile_now_iso8601();
         bool effective_pinned = opts->override_pinned ? opts->pinned : spec->ref_explicit;
 
         for (int i = 0; i < skills->count; i++) {
@@ -907,19 +918,23 @@ int install_package(const InstallOptions *opts) {
                 }
             }
 
-            const char *sha = (resolved && resolved->sha) ? resolved->sha : "-";
-            lockfile_upsert(lf, skills->skills[i].name, source, spec->ref, sha, now,
-                            effective_pinned, LOCK_SKILL);
+            if (lf) {
+                const char *sha = (resolved && resolved->sha) ? resolved->sha : "-";
+                lockfile_upsert(lf, skills->skills[i].name, source, spec->ref, sha, now,
+                                effective_pinned, LOCK_SKILL);
+            }
 
             spm_free(canonical);
         }
 
-        if (lockfile_save(lf) != 0) {
-            log_error("Warning: failed to write %s", lf->path);
+        if (lf) {
+            if (lockfile_save(lf) != 0) {
+                log_error("Warning: failed to write %s", lf->path);
+            }
+            lockfile_free(lf);
+            spm_free(now);
         }
-        lockfile_free(lf);
         spm_free(source);
-        spm_free(now);
 
         log_info("Installed %d skill(s) via symlinks.", installed);
     }
@@ -966,16 +981,18 @@ static int remove_reference(const RemoveOptions *opts) {
     }
     spm_free(ref_dir);
 
-    Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
-    if (lockfile_remove_entry(lf, opts->skill_name)) {
-        if (lockfile_save(lf) != 0) {
-            log_error("Warning: failed to update %s", lf->path);
+    if (!opts->skip_lockfile) {
+        Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
+        if (lockfile_remove_entry(lf, opts->skill_name)) {
+            if (lockfile_save(lf) != 0) {
+                log_error("Warning: failed to update %s", lf->path);
+            }
         }
+        if (agentsmd_rebuild_block(lf) != 0) {
+            log_error("Warning: failed to update %s", agentsmd_target_path());
+        }
+        lockfile_free(lf);
     }
-    if (agentsmd_rebuild_block(lf) != 0) {
-        log_error("Warning: failed to update %s", agentsmd_target_path());
-    }
-    lockfile_free(lf);
 
     log_info("Removed reference '%s'.", opts->skill_name);
     return 0;
@@ -1075,7 +1092,7 @@ int remove_skill(const RemoveOptions *opts) {
 
     // Drop the lockfile entry for local removes. Global installs don't write
     // a project lockfile, so leave any same-named local entry alone in that case.
-    if (!opts->global) {
+    if (!opts->global && !opts->skip_lockfile) {
         Lockfile *lf = lockfile_load(LOCAL_AGENTS_DIR);
         if (lockfile_remove_entry(lf, opts->skill_name)) {
             if (lockfile_save(lf) != 0) {

@@ -259,8 +259,8 @@ static void free_string_array(char **arr, int n) {
 // ---- install ---------------------------------------------------------------
 
 // Args mirror CLI flags. Pass NULL/empty strings to omit. is_reference/is_npm/
-// global are 0/1 ints. install_package always runs with yes=1 from the API
-// (no interactive prompts).
+// global/skip_lockfile are 0/1 ints. install_package always runs with yes=1
+// from the API (no interactive prompts).
 EMSCRIPTEN_KEEPALIVE
 char *rosie_api_install(const char *spec,
                         const char *skill_name,
@@ -269,7 +269,8 @@ char *rosie_api_install(const char *spec,
                         const char *include_paths_nl,
                         int is_reference,
                         int is_npm,
-                        int global) {
+                        int global,
+                        int skip_lockfile) {
     clear_last_error();
 
     int agent_count = 0;
@@ -290,6 +291,7 @@ char *rosie_api_install(const char *spec,
     opts.is_npm = is_npm ? true : false;
     opts.include_paths = (const char **)include_paths;
     opts.include_count = include_count;
+    opts.skip_lockfile = skip_lockfile ? true : false;
 
     int rc;
     if (!opts.spec) {
@@ -317,7 +319,8 @@ char *rosie_api_install(const char *spec,
 EMSCRIPTEN_KEEPALIVE
 char *rosie_api_remove(const char *skill_name,
                        const char *agent_names_csv,
-                       int global) {
+                       int global,
+                       int skip_lockfile) {
     clear_last_error();
     if (!skill_name || !*skill_name) {
         return envelope_err("skill name is required");
@@ -331,6 +334,7 @@ char *rosie_api_remove(const char *skill_name,
     opts.agent_count = agent_count;
     opts.global = global ? true : false;
     opts.yes = true;
+    opts.skip_lockfile = skip_lockfile ? true : false;
 
     int rc = remove_skill(&opts);
     free_string_array(agent_names, agent_count);
@@ -349,11 +353,12 @@ char *rosie_api_remove(const char *skill_name,
 
 // only_skill = NULL or "" → update all entries. Otherwise updates just that one.
 EMSCRIPTEN_KEEPALIVE
-char *rosie_api_update(const char *only_skill) {
+char *rosie_api_update(const char *only_skill, int skip_lockfile) {
     clear_last_error();
     InstallOptions base = {0};
     base.yes = true;
     base.global = false;
+    base.skip_lockfile = skip_lockfile ? true : false;
 
     const char *target = (only_skill && *only_skill) ? only_skill : NULL;
     int rc = update_skills(&base, target);

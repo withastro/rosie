@@ -72,6 +72,28 @@ await rosie.update();           // update everything in rosie.lock
 await rosie.update('pdf');      // update just one
 ```
 
+### Working directory
+
+Every function accepts a `cwd` option — equivalent to `cd`'ing into that
+directory before running. `process.cwd()` is restored on exit:
+
+```js
+await rosie.install('owner/repo', { cwd: '/path/to/project' });
+```
+
+Mirrors the CLI's `--cwd` flag.
+
+### Skip the lockfile
+
+For ad-hoc installs that shouldn't be recorded in `.agents/rosie.lock`:
+
+```js
+await rosie.install('anthropics/skills', { lockfile: false });
+```
+
+Mirrors the CLI's `--no-lockfile` flag. Available on `install`, `remove`,
+and `update`.
+
 ### Reinstall from lockfile
 
 ```js

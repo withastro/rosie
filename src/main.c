@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <getopt.h>
 #include "install.h"
 #include "download.h"
@@ -82,19 +83,23 @@ static void print_agents(void) {
     agent_list_free(agents);
 }
 
+// Sentinel values for long-only options (no single-letter form).
+#define OPT_NO_LOCKFILE 0x100
+
 static int cmd_install(int argc, char **argv, bool list_only) {
     static struct option long_options[] = {
-        {"agent",   required_argument, 0, 'a'},
-        {"global",  no_argument,       0, 'g'},
-        {"local",   no_argument,       0, 'l'},
-        {"ref",     no_argument,       0, 'r'},
-        {"skill",   required_argument, 0, 's'},
-        {"name",    required_argument, 0, 'n'},
-        {"npm",     no_argument,       0, 'N'},
-        {"include", required_argument, 0, 'I'},
-        {"yes",     no_argument,       0, 'y'},
-        {"verbose", no_argument,       0, 'v'},
-        {"help",    no_argument,       0, 'h'},
+        {"agent",       required_argument, 0, 'a'},
+        {"global",      no_argument,       0, 'g'},
+        {"local",       no_argument,       0, 'l'},
+        {"ref",         no_argument,       0, 'r'},
+        {"skill",       required_argument, 0, 's'},
+        {"name",        required_argument, 0, 'n'},
+        {"npm",         no_argument,       0, 'N'},
+        {"include",     required_argument, 0, 'I'},
+        {"yes",         no_argument,       0, 'y'},
+        {"verbose",     no_argument,       0, 'v'},
+        {"help",        no_argument,       0, 'h'},
+        {"no-lockfile", no_argument,       0, OPT_NO_LOCKFILE},
         {0, 0, 0, 0}
     };
 
@@ -151,6 +156,9 @@ static int cmd_install(int argc, char **argv, bool list_only) {
             case 'h':
                 print_usage(argv[0]);
                 return 0;
+            case OPT_NO_LOCKFILE:
+                opts.skip_lockfile = true;
+                break;
             default:
                 return 1;
         }
@@ -235,10 +243,11 @@ static int cmd_install(int argc, char **argv, bool list_only) {
 
 static int cmd_update(int argc, char **argv) {
     static struct option long_options[] = {
-        {"agent",   required_argument, 0, 'a'},
-        {"yes",     no_argument,       0, 'y'},
-        {"verbose", no_argument,       0, 'v'},
-        {"help",    no_argument,       0, 'h'},
+        {"agent",       required_argument, 0, 'a'},
+        {"yes",         no_argument,       0, 'y'},
+        {"verbose",     no_argument,       0, 'v'},
+        {"help",        no_argument,       0, 'h'},
+        {"no-lockfile", no_argument,       0, OPT_NO_LOCKFILE},
         {0, 0, 0, 0}
     };
 
@@ -259,6 +268,9 @@ static int cmd_update(int argc, char **argv) {
                 printf("Usage: rosie update [skill-name]\n");
                 printf("  Re-resolve and reinstall lockfile entries that have changed upstream.\n");
                 return 0;
+            case OPT_NO_LOCKFILE:
+                opts.skip_lockfile = true;
+                break;
             default: return 1;
         }
     }
@@ -275,12 +287,13 @@ static int cmd_update(int argc, char **argv) {
 
 static int cmd_remove(int argc, char **argv) {
     static struct option long_options[] = {
-        {"agent",   required_argument, 0, 'a'},
-        {"global",  no_argument,       0, 'g'},
-        {"local",   no_argument,       0, 'l'},
-        {"yes",     no_argument,       0, 'y'},
-        {"verbose", no_argument,       0, 'v'},
-        {"help",    no_argument,       0, 'h'},
+        {"agent",       required_argument, 0, 'a'},
+        {"global",      no_argument,       0, 'g'},
+        {"local",       no_argument,       0, 'l'},
+        {"yes",         no_argument,       0, 'y'},
+        {"verbose",     no_argument,       0, 'v'},
+        {"help",        no_argument,       0, 'h'},
+        {"no-lockfile", no_argument,       0, OPT_NO_LOCKFILE},
         {0, 0, 0, 0}
     };
 
@@ -315,6 +328,9 @@ static int cmd_remove(int argc, char **argv) {
             case 'h':
                 print_usage(argv[0]);
                 return 0;
+            case OPT_NO_LOCKFILE:
+                opts.skip_lockfile = true;
+                break;
             default:
                 return 1;
         }
@@ -334,6 +350,26 @@ static int cmd_remove(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+    // Process global flags before subcommand dispatch. --cwd <path> chdirs so
+    // all relative paths (.agents/rosie.lock, etc.) resolve against that dir.
+    for (int i = 1; i < argc; ) {
+        if (strcmp(argv[i], "--cwd") == 0) {
+            if (i + 1 >= argc) {
+                log_error("--cwd requires a path argument");
+                return 1;
+            }
+            if (chdir(argv[i + 1]) != 0) {
+                log_error("Failed to chdir to %s", argv[i + 1]);
+                return 1;
+            }
+            // Remove both --cwd and its value from argv.
+            for (int j = i; j + 2 < argc; j++) argv[j] = argv[j + 2];
+            argc -= 2;
+        } else {
+            i++;
+        }
+    }
+
     if (argc < 2) {
         print_usage(argv[0]);
         return 1;

@@ -51,9 +51,12 @@ SRCS=(
   src/agent.c src/agentsmd.c src/archive.c src/download.c
   src/install.c src/lockfile.c src/main.c src/npm.c src/resolve.c
   src/skill.c src/util.c
-  wasm/http-stub.c
+  wasm/api.c wasm/http-stub.c
 )
 
+# EXIT_RUNTIME=1 lets the CLI shim observe ExitStatus when main() returns;
+# API callers pass noInitialRun=true so main() never runs and ccall stays
+# usable for repeated invocations.
 echo ">>> Compiling rosie.wasm"
 emcc "${SRCS[@]}" \
   -O2 \
@@ -67,10 +70,13 @@ emcc "${SRCS[@]}" \
   -sALLOW_MEMORY_GROWTH=1 \
   -sINITIAL_MEMORY=33554432 \
   -sMODULARIZE=1 \
+  -sEXPORT_ES6=1 \
   -sEXPORT_NAME=createRosie \
   -sENVIRONMENT=node \
   -sNODERAWFS=1 \
   -sEXIT_RUNTIME=1 \
+  -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_rosie_api_list_installed,_rosie_api_agents,_rosie_api_install,_rosie_api_remove,_rosie_api_update,_rosie_api_set_verbose,_rosie_api_install_log_bridge \
+  -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString \
   --js-library wasm/http-lib.js \
   -o "$OUT/rosie.js"
 

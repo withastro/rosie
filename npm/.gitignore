@@ -1,2 +1,4 @@
 */bin/rosie
 rosie-skills/wasm/
+rosie-skills/dist/
+rosie-skills/node_modules/

@@ -2,13 +2,24 @@
   "name": "rosie-skills",
   "version": "0.0.0",
   "description": "A fast, cross-platform package manager for AI agent skills",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "dist/index.d.ts",
   "bin": {
-    "rosie-skills": "bin/rosie-skills.js"
+    "rosie-skills": "dist/bin.js"
   },
   "files": [
-    "bin",
+    "dist",
     "wasm"
   ],
+  "scripts": {
+    "build": "tsc"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/matthewp/rosie.git"
@@ -23,5 +34,9 @@
     "rosie-skills-linux-x64": "0.0.0",
     "rosie-skills-darwin-arm64": "0.0.0",
     "rosie-skills-freebsd-x64": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
   }
 }

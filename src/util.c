@@ -259,31 +259,64 @@ int copy_dir_recursive(const char *src, const char *dst) {
 }
 
 // Logging
+static log_callback_t g_log_callback = NULL;
+static char g_last_error[1024] = {0};
+
+void set_log_callback(log_callback_t cb) {
+    g_log_callback = cb;
+}
+
+const char *last_error_message(void) {
+    return g_last_error[0] ? g_last_error : NULL;
+}
+
+void clear_last_error(void) {
+    g_last_error[0] = '\0';
+}
+
+// Format `fmt + args` into `buf` and either emit through the callback or
+// fall back to the supplied default `fp` stream (matching pre-callback
+// behavior). `prefix` is emitted before the message when going to a stream.
+static void log_dispatch(LogLevel level, FILE *fp, const char *prefix,
+                         const char *fmt, va_list args) {
+    char buf[1024];
+    int n = vsnprintf(buf, sizeof(buf), fmt, args);
+    if (n < 0) return;
+    if (g_log_callback) {
+        g_log_callback(level, buf);
+    } else if (fp) {
+        if (prefix) fputs(prefix, fp);
+        fputs(buf, fp);
+        fputc('\n', fp);
+    }
+}
+
 void log_info(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    vprintf(fmt, args);
+    log_dispatch(LOG_LEVEL_INFO, stdout, NULL, fmt, args);
     va_end(args);
-    printf("\n");
 }
 
 void log_error(const char *fmt, ...) {
-    fprintf(stderr, "rosie: error: ");
     va_list args;
     va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
+    // Capture into the last-error buffer regardless of routing, so API
+    // callers can surface it in the thrown JS Error.
+    va_list args_copy;
+    va_copy(args_copy, args);
+    vsnprintf(g_last_error, sizeof(g_last_error), fmt, args_copy);
+    va_end(args_copy);
+    log_dispatch(LOG_LEVEL_ERROR, stderr, "rosie: error: ", fmt, args);
     va_end(args);
-    fprintf(stderr, "\n");
 }
 
 void log_debug(const char *fmt, ...) {
-    if (!g_verbose) return;
-    printf("[debug] ");
+    if (!g_verbose && !g_log_callback) return;
     va_list args;
     va_start(args, fmt);
-    vprintf(fmt, args);
+    log_dispatch(LOG_LEVEL_DEBUG, stdout, "[debug] ", fmt, args);
     va_end(args);
-    printf("\n");
 }
 
 // Slurp a file into a malloc'd, NUL-terminated buffer. NULL on any error.

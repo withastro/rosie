@@ -1,6 +1,7 @@
 #include "link.h"
 #include "util.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -187,14 +188,40 @@ int rosie_create_link(const char *target, const char *link_path, bool is_dir) {
 
 // ---------------------------------------------------------------------------
 // POSIX: a single symlink() call covers both files and directories.
+//
+// WASM caveat: emcc never defines _WIN32, so this branch is the one taken
+// regardless of which OS the resulting WASM file ultimately runs on. To
+// support Windows hosts running our WASM, we check g_host_is_windows (set at
+// init by the JS loader via rosie_api_set_host_platform) and route through
+// JS-implemented externs that use junctions / hard links instead of symlinks.
 // ---------------------------------------------------------------------------
 
 #include <unistd.h>
 #include <errno.h>
 
+#ifdef __EMSCRIPTEN__
+// Implemented in wasm/http-lib.js. Both return 0 on success, -1 on failure.
+extern int wasm_create_junction(const char *target, const char *link_path);
+extern int wasm_copy_or_link_file(const char *target, const char *link_path);
+#endif
+
 int rosie_create_link(const char *target, const char *link_path, bool is_dir) {
-    (void)is_dir;  // POSIX symlink doesn't care.
     if (!target || !link_path) return -1;
+
+#ifdef __EMSCRIPTEN__
+    if (g_host_is_windows) {
+        int rc = is_dir
+            ? wasm_create_junction(target, link_path)
+            : wasm_copy_or_link_file(target, link_path);
+        if (rc != 0) {
+            log_error("link failed on Windows host: %s -> %s",
+                      link_path, target);
+        }
+        return rc;
+    }
+#endif
+
+    (void)is_dir;  // POSIX symlink doesn't care.
     if (symlink(target, link_path) != 0) {
         log_error("symlink failed: %s -> %s: %s",
                   link_path, target, strerror(errno));

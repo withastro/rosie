@@ -222,6 +222,15 @@ void rosie_api_set_verbose(int verbose) {
     g_verbose = verbose ? true : false;
 }
 
+// Called once from the JS loader after Module instantiation. `platform` is
+// whatever Node's `process.platform` returns ("win32", "linux", "darwin",
+// "freebsd", ...). We only care about "win32" — it flips the route in
+// link.c to use junctions / hard-link-or-copy via JS-implemented externs.
+EMSCRIPTEN_KEEPALIVE
+void rosie_api_set_host_platform(const char *platform) {
+    g_host_is_windows = platform && strcmp(platform, "win32") == 0;
+}
+
 // ---- string-list helpers (split CSV / newline-separated args) --------------
 
 // Splits `s` on `sep` into a malloc'd array of malloc'd strings. Sets *out_n

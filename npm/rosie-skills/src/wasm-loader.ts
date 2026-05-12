@@ -77,6 +77,9 @@ async function getOrLoadModule(): Promise<RosieModule> {
     });
     // Install the C-side log bridge so log_* messages reach __rosieLog__.
     m.ccall("rosie_api_install_log_bridge", null, [], []);
+    // Tell C what host platform we're on so link.c can route symlink calls
+    // through wasm_create_junction / wasm_copy_or_link_file on Windows.
+    m.ccall("rosie_api_set_host_platform", null, ["string"], [process.platform]);
     return m;
   })();
   return modulePromise;

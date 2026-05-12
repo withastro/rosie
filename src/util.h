@@ -56,4 +56,9 @@ void clear_last_error(void);
 
 extern bool g_verbose;
 
+// True when running under WASM on a Windows host. Native builds never set
+// this — they use the appropriate #ifdef _WIN32 branch instead. Set by the
+// JS loader via rosie_api_set_host_platform("win32") at module init.
+extern bool g_host_is_windows;
+
 #endif // SPM_UTIL_H

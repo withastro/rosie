@@ -11,6 +11,7 @@
 #include <pwd.h>
 
 bool g_verbose = false;
+bool g_host_is_windows = false;
 
 // Memory management
 void *spm_malloc(size_t size) {

@@ -75,7 +75,7 @@ emcc "${SRCS[@]}" \
   -sENVIRONMENT=node \
   -sNODERAWFS=1 \
   -sEXIT_RUNTIME=1 \
-  -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_rosie_api_list_installed,_rosie_api_agents,_rosie_api_install,_rosie_api_remove,_rosie_api_update,_rosie_api_set_verbose,_rosie_api_install_log_bridge \
+  -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_rosie_api_list_installed,_rosie_api_agents,_rosie_api_install,_rosie_api_remove,_rosie_api_update,_rosie_api_set_verbose,_rosie_api_install_log_bridge,_rosie_api_set_host_platform \
   -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString \
   --js-library wasm/http-lib.js \
   -o "$OUT/rosie.js"

@@ -9,6 +9,56 @@
 // can distinguish "not found, try as tag" from "the network is down."
 
 addToLibrary({
+  // int wasm_create_junction(const char *target, const char *link_path)
+  // Used only when the host is Windows (g_host_is_windows is set in C).
+  // Creates an NTFS junction. Junctions only work for directories — callers
+  // pass is_dir=true to rosie_create_link to get here.
+  wasm_create_junction: function(target_ptr, link_ptr) {
+    const target = UTF8ToString(target_ptr);
+    const link = UTF8ToString(link_ptr);
+    try {
+      // 'junction' lives in fs.symlinkSync's third argument; doesn't require
+      // admin or Developer Mode on Windows. Junctions need absolute targets,
+      // so we resolve relative ones here.
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const absTarget = path.isAbsolute(target)
+        ? target
+        : path.resolve(path.dirname(link), target);
+      fs.symlinkSync(absTarget, link, 'junction');
+      return 0;
+    } catch (e) {
+      if (typeof console !== 'undefined') console.error('junction error:', e.message);
+      return -1;
+    }
+  },
+
+  // int wasm_copy_or_link_file(const char *target, const char *link_path)
+  // Junctions can't point at files. Try a hard link first (cheap, no extra
+  // disk usage); fall back to a full file copy if hard-link fails (different
+  // volume, FS doesn't support hard links, etc.).
+  wasm_copy_or_link_file: function(target_ptr, link_ptr) {
+    const target = UTF8ToString(target_ptr);
+    const link = UTF8ToString(link_ptr);
+    try {
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const absTarget = path.isAbsolute(target)
+        ? target
+        : path.resolve(path.dirname(link), target);
+      try {
+        fs.linkSync(absTarget, link);
+        return 0;
+      } catch {
+        fs.copyFileSync(absTarget, link);
+        return 0;
+      }
+    } catch (e) {
+      if (typeof console !== 'undefined') console.error('copy/link error:', e.message);
+      return -1;
+    }
+  },
+
   // int wasm_fetch_to_file(const char *url, const char *output_path)
   // Streams the response body straight to output_path (no buffering of the
   // full tarball in WASM memory). Used for tarball downloads.

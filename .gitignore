@@ -22,3 +22,4 @@ core
 .claude/
 .opencode/
 .cursor/
+target/

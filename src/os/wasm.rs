@@ -92,6 +92,12 @@ extern "C" {
         is_dir: i32,
     ) -> i32;
     fn rosie_fs_set_mode(path_ptr: *const u8, path_len: usize, mode: u32) -> i32;
+    fn rosie_fs_canonicalize(
+        path_ptr: *const u8,
+        path_len: usize,
+        out_buf_ptr: *mut *mut u8,
+        out_len: *mut usize,
+    ) -> i32;
 
     // OS / env / time
     fn rosie_home_dir(out_buf_ptr: *mut *mut u8, out_len: *mut usize) -> i32;
@@ -356,6 +362,27 @@ pub fn set_mode(path: &Path, mode: u32) -> Result<()> {
     } else {
         Err(err_from_status(&format!("chmod {}", path.display()), rc))
     }
+}
+
+pub fn canonicalize(path: &Path) -> Result<PathBuf> {
+    let p = path_bytes(path);
+    let mut buf: *mut u8 = std::ptr::null_mut();
+    let mut len: usize = 0;
+    let rc = unsafe {
+        rosie_fs_canonicalize(
+            p.as_ptr(),
+            p.len(),
+            &mut buf as *mut *mut u8,
+            &mut len as *mut usize,
+        )
+    };
+    if rc != 0 {
+        return Err(err_from_status(&format!("canonicalize {}", path.display()), rc));
+    }
+    let blob = unsafe { take_owned_bytes(buf, len) };
+    let s = String::from_utf8(blob)
+        .map_err(|_| OsError(format!("non-utf8 path {}", path.display())))?;
+    Ok(PathBuf::from(s))
 }
 
 // ---------------------------------------------------------------------------

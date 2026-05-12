@@ -98,8 +98,16 @@ fn apply_cwd(raw: Vec<std::ffi::OsString>) -> Result<Vec<std::ffi::OsString>, St
     Ok(out)
 }
 
+/// Entry point used by `src/bin/rosie.rs`. Reads argv from the OS.
 pub fn main() -> i32 {
-    let raw: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    run(std::env::args_os().collect())
+}
+
+/// Run with an explicit argv (program name as `args[0]`). The wasm CLI
+/// dispatch (`rosie_api_main` in the wasm crate) calls this directly with
+/// args plucked from a null-separated string.
+pub fn run(args: Vec<std::ffi::OsString>) -> i32 {
+    let raw = args;
     let raw = match apply_cwd(raw) {
         Ok(v) => v,
         Err(e) => {

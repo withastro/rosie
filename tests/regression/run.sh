@@ -7,9 +7,10 @@
 # optional assertions.sh for extra checks.
 #
 # Usage:
-#   ./run.sh                              # run every case
+#   ./run.sh                              # native: target/release/rosie
+#   ./run.sh --mode wasm                  # wasm: bin.js + ROSIE_FORCE_WASM=1
 #   ./run.sh install-basic                # run only matching cases
-#   ./run.sh --binary /path/to/rosie      # use a different rosie binary
+#   ./run.sh --binary /path/to/rosie      # use a custom rosie binary
 #   ./run.sh --port 9876                  # mock server port (default 8765)
 #   ./run.sh --keep-tmp                   # keep tmpdirs for inspection
 
@@ -19,14 +20,16 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 
 # Defaults
-ROSIE_BINARY="$REPO_ROOT/rosie"
+ROSIE_BINARY="$REPO_ROOT/target/release/rosie"
+MODE="native"
 MOCK_PORT=8765
 KEEP_TMP=0
 CASE_FILTER=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --binary) ROSIE_BINARY="$2"; shift 2 ;;
+        --binary) ROSIE_BINARY="$2"; MODE="custom"; shift 2 ;;
+        --mode)   MODE="$2"; shift 2 ;;
         --port)   MOCK_PORT="$2"; shift 2 ;;
         --keep-tmp) KEEP_TMP=1; shift ;;
         -h|--help)
@@ -37,9 +40,17 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# --mode wasm: drive the wasm CLI through the npm package's bin.js.
+if [ "$MODE" = "wasm" ]; then
+    ROSIE_BINARY="$HERE/lib/rosie-wasm"
+fi
+
 if [ ! -x "$ROSIE_BINARY" ]; then
     echo "rosie binary not found or not executable: $ROSIE_BINARY" >&2
-    echo "build first: (cd $REPO_ROOT && make)" >&2
+    case "$MODE" in
+        native|custom) echo "build first: (cd $REPO_ROOT && cargo build --release)" >&2 ;;
+        wasm)          echo "build first: (cd $REPO_ROOT/wasm && ./build.sh) && (cd $REPO_ROOT/npm/rosie-skills && npm install && npm run build)" >&2 ;;
+    esac
     exit 2
 fi
 # Canonicalize so per-case scripts running in a tmpdir still find the binary.

@@ -350,3 +350,27 @@ pub unsafe extern "C" fn rosie_api_set_host_platform(platform: *const c_char) {
     // shim itself can branch on process.platform; this export stays as a
     // no-op to preserve the C ABI surface the TS wrapper expects.
 }
+
+/// CLI entry for `npx rosie-skills ...`. The JS launcher (bin.ts) calls
+/// this when the platform has no native binary and the WASM fallback
+/// kicks in.
+///
+/// `argv` is a unit-separator-delimited (\x1f) string of args, NOT
+/// including the program name — rosie::cli::run prepends "rosie" itself.
+/// We use \x1f instead of \0 because the ccall path passes through a
+/// NUL-terminated CStr and \0 would truncate at the first separator.
+///
+/// Returns the process exit code (0/1/255, sign-extended for Rust's
+/// negative-i32 errors).
+#[no_mangle]
+pub unsafe extern "C" fn rosie_api_main(argv: *const c_char) -> i32 {
+    rosie::log::clear_last_error();
+    let argv = cstr_to_owned(argv).unwrap_or_default();
+    let mut args: Vec<std::ffi::OsString> = vec!["rosie".into()];
+    if !argv.is_empty() {
+        for part in argv.split('\x1f') {
+            args.push(std::ffi::OsString::from(part));
+        }
+    }
+    rosie::cli::run(args)
+}

@@ -116,7 +116,7 @@ fn canonicalize_local_path(user_path: &str) -> Option<String> {
         PathBuf::from(user_path)
     };
 
-    let abs = match std::fs::canonicalize(&expanded) {
+    let abs = match os::canonicalize(&expanded) {
         Ok(p) => p,
         Err(_) => {
             crate::log::error(&format!("Cannot resolve path: {user_path}"));

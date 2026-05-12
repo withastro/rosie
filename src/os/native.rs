@@ -163,6 +163,12 @@ pub fn read_link(path: &Path) -> Result<String> {
         .ok_or_else(|| OsError::new(format!("non-utf8 symlink target at {}", path.display())))
 }
 
+/// Resolve a path to its absolute, symlink-free canonical form.
+pub fn canonicalize(path: &Path) -> Result<PathBuf> {
+    std::fs::canonicalize(path)
+        .map_err(|e| OsError::from_io(&format!("canonicalize {}", path.display()), e))
+}
+
 // ---- link creation ---------------------------------------------------------
 
 /// Create a symbolic link from `link_path` to `target`. On Windows, `is_dir`

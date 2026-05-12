@@ -359,6 +359,16 @@ async function createRosie(opts = {}) {
         }
     };
 
+    envImports.rosie_fs_canonicalize = (pathPtr, pathLen, outBufPtr, outLenPtr) => {
+        const p = decodeStr(pathPtr, pathLen);
+        try {
+            const real = fs.realpathSync(p);
+            return setOwnedBytes(outBufPtr, outLenPtr, Buffer.from(real));
+        } catch (e) {
+            return -1;
+        }
+    };
+
     // ---- OS / env / time ----
     envImports.rosie_home_dir = (outBufPtr, outLenPtr) => {
         const h = process.env.HOME || process.env.USERPROFILE || '';

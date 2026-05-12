@@ -1,0 +1,7 @@
+assert_exit_code 0 "$(cat exit_code)"
+assert_contains stdout "Found 2 skill(s)"
+assert_contains stdout "alpha-skill"
+assert_contains stdout "beta-skill"
+assert_contains stdout "Installed 2 skill(s)"
+assert_symlink_target ".claude/skills/alpha-skill" "../../.agents/skills/alpha-skill"
+assert_symlink_target ".claude/skills/beta-skill" "../../.agents/skills/beta-skill"

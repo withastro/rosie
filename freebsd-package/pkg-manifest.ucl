@@ -13,7 +13,4 @@ desc: <<EOD
 A fast, cross-platform package manager for AI agent skills.
 Think npm, but for skills.
 EOD
-deps: {
-    curl: {origin: ftp/curl, version: "0"}
-    libarchive: {origin: archivers/libarchive, version: "0"}
-}
+# No runtime deps: the Rust binary statically links rustls and tar/flate2.

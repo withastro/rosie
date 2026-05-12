@@ -22,3 +22,12 @@ core
 .claude/
 .opencode/
 .cursor/
+target/
+
+# Regression test fixtures: post-install snapshots under expected/ are golden
+# files committed to the repo. The patterns above match `.agents/` etc.
+# anywhere in the tree, so we re-include them for the regression-case dirs.
+!tests/regression/cases/*/expected/.agents/
+!tests/regression/cases/*/expected/.claude/
+!tests/regression/cases/*/expected/.opencode/
+!tests/regression/cases/*/expected/.cursor/

@@ -461,6 +461,46 @@ await rosie.install('anthropics/skills', { cwd: '/path/to/project' });
 await rosie.installFromLockfile();
 ```
 
+  <h3 class="sub-label">install result</h3>
+  <p class="lockfile-intro"><code>install</code>, <code>installFromLockfile</code>, and <code>update</code> return an <code>InstallResult</code>. per-skill detail in <code>skills</code>, deduped unions in <code>installedAgents</code> / <code>failedAgents</code>, and <code>installedInstruction</code> names the agent-instructions file that was written (or <code>null</code> when none was touched).</p>
+
+```ts
+const result = await rosie.install('anthropics/skills');
+// {
+//   skills: [
+//     { name: 'pdf', kind: 'skill',
+//       installedAgents: ['claude', 'cursor'],
+//       failedAgents: [] },
+//     ...
+//   ],
+//   installedAgents: ['claude', 'cursor'],
+//   failedAgents: [],
+//   installedInstruction: null,
+// }
+```
+
+  <p class="lockfile-intro"><code>failedAgents</code> is non-fatal — rosie tries every agent and reports the misses. Common cause: an existing non-symlink file at <code>~/.&lt;agent&gt;/skills/&lt;name&gt;</code> blocking the create, or restrictive permissions on the agent's <code>skills/</code> dir. The canonical copy under <code>.agents/skills/</code> still lands and the lockfile still records the entry; rerunning <code>rosie.install</code> after fixing permissions re-attempts the failed agents.</p>
+
+```ts
+const result = await rosie.install('anthropics/skills');
+if (result.failedAgents.length > 0) {
+  console.warn(`couldn't symlink into: ${result.failedAgents.join(', ')}`);
+}
+```
+
+  <p class="lockfile-intro">reference installs land under <code>.agents/references/</code> instead of agent dirs, so <code>kind === 'reference'</code> and the agent arrays are empty. <code>installedInstruction</code> is the path of the markdown file (<code>AGENTS.md</code> / <code>CLAUDE.md</code> / <code>GEMINI.md</code> / <code>.github/copilot-instructions.md</code>) whose references block was rewritten.</p>
+
+```ts
+const result = await rosie.install('vercel/next.js', { ref: true });
+// {
+//   skills: [{ name: 'vercel-next.js', kind: 'reference',
+//              installedAgents: [], failedAgents: [] }],
+//   installedAgents: [],
+//   failedAgents: [],
+//   installedInstruction: 'AGENTS.md',
+// }
+```
+
   <h3 class="sub-label">references</h3>
   <p class="lockfile-intro">pass <code>ref: true</code> to install a markdown doc into <code>.agents/references/&lt;name&gt;/REFERENCE.md</code> and append it to the project's agent-instructions file (<code>AGENTS.md</code> · <code>CLAUDE.md</code> · <code>GEMINI.md</code> · <code>.github/copilot-instructions.md</code>, first one found — else <code>AGENTS.md</code> is created).</p>
 

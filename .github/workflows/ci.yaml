@@ -12,33 +12,71 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libarchive-dev pkg-config
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build
-        run: make
+        run: cargo build --release
 
       - name: Verify binary
         run: |
-          ./rosie --version
-          ./rosie help
+          ./target/release/rosie --version
+          ./target/release/rosie help
+
+      - name: Run regression suite (native)
+        run: ./tests/regression/run.sh
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-wasip1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install binaryen (wasm-opt, pinned via npm)
+        run: cd wasm/spike && npm install
+
+      - name: Build wasm
+        run: cd wasm && ./build.sh
+
+      - name: Build TypeScript wrapper
+        run: cd npm/rosie-skills && npm install && npm run build
+
+      - name: Run regression suite (wasm)
+        run: ./tests/regression/run.sh --mode wasm
 
   build-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: brew install curl libarchive pkg-config
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install GNU tar (needed by the fixture build script)
+        run: brew install gnu-tar
 
       - name: Build
+        run: cargo build --release
+
+      - name: Verify binary has no Homebrew dependencies
+        # rustls is statically linked; the binary should be self-contained.
         run: |
-          export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig:$PKG_CONFIG_PATH"
-          make
+          if otool -L target/release/rosie | grep -qE '/opt/homebrew|/usr/local/Cellar'; then
+            echo "ERROR: binary links against Homebrew libs — not portable"
+            otool -L target/release/rosie
+            exit 1
+          fi
+          otool -L target/release/rosie
 
       - name: Verify binary
         run: |
-          ./rosie --version
-          ./rosie help
+          ./target/release/rosie --version
+          ./target/release/rosie help
+
+      - name: Run regression suite (native)
+        run: ./tests/regression/run.sh

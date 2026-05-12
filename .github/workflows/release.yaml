@@ -100,9 +100,10 @@ jobs:
           usesh: true
           envs: 'VERSION'
           prepare: |
-            pkg install -y pkgconf curl libarchive gmake
+            pkg install -y rust
           run: |
-            gmake CC=cc release
+            cargo build --release
+            cp target/release/rosie rosie
             ./freebsd-package/build-package.sh "$VERSION"
             mkdir -p pages/freebsd/All
             cp "rosie-${VERSION}.pkg" pages/freebsd/All/
@@ -137,24 +138,23 @@ jobs:
         include:
           - codename: jammy
             runner: ubuntu-22.04
-            libcurl: libcurl4
           - codename: noble
             runner: ubuntu-24.04
-            libcurl: libcurl4t64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libarchive-dev pkg-config
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build rosie
-        run: make release
+        run: |
+          cargo build --release
+          cp target/release/rosie rosie
 
       - name: Build .deb
-        run: ./debian/build-package.sh "${{ needs.create-release.outputs.version }}" "${{ matrix.codename }}" "${{ matrix.libcurl }}"
+        # The Rust binary is self-contained (rustls statically linked), so the
+        # debian package no longer needs runtime deps on libcurl/libarchive.
+        run: ./debian/build-package.sh "${{ needs.create-release.outputs.version }}" "${{ matrix.codename }}"
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
@@ -230,13 +230,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libarchive-dev pkg-config
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build rosie
-        run: make release
+        run: |
+          cargo build --release
+          cp target/release/rosie rosie
 
       - name: Upload rosie binary for npm
         uses: actions/upload-artifact@v4
@@ -250,30 +249,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install libarchive and its static deps
-        # macOS SDK ships curl.h + libcurl/libbz2/libz/libiconv but not libarchive
-        # nor its compression deps (zstd, lz4, b2, lzma, expat). Brew them all,
-        # link statically so the binary has no Homebrew runtime dep.
-        run: brew install libarchive zstd lz4 libb2 xz expat
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Build rosie with static libarchive
+      - name: Build rosie
         run: |
-          PFX_LA="$(brew --prefix libarchive)"
-          # Replace each -l<dep> in pkg-config's static link line with the
-          # absolute path to the .a so it gets baked into the binary instead of
-          # picked up dynamically from /opt/homebrew at runtime.
-          STATIC_LIBS="$(PKG_CONFIG_PATH=$PFX_LA/lib/pkgconfig pkg-config --static --libs libarchive \
-            | sed "s|-larchive|$PFX_LA/lib/libarchive.a|" \
-            | sed "s|-lexpat|$(brew --prefix expat)/lib/libexpat.a|" \
-            | sed "s|-llzma|$(brew --prefix xz)/lib/liblzma.a|" \
-            | sed "s|-lzstd|$(brew --prefix zstd)/lib/libzstd.a|" \
-            | sed "s|-llz4|$(brew --prefix lz4)/lib/liblz4.a|" \
-            | sed "s|-lb2|$(brew --prefix libb2)/lib/libb2.a|")"
-          make release \
-            CFLAGS="-O2 -I$PFX_LA/include -Wall -Wextra -pedantic -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE" \
-            LDFLAGS="-lcurl $STATIC_LIBS"
+          cargo build --release
+          cp target/release/rosie rosie
 
       - name: Verify binary has no Homebrew dependencies
+        # rustls is statically linked; nothing should reach into /opt/homebrew.
         run: |
           if otool -L rosie | grep -qE '/opt/homebrew|/usr/local/Cellar'; then
             echo "ERROR: binary links against Homebrew libs — not portable"
@@ -294,13 +278,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build rosie.wasm via emscripten
-        # docker is preinstalled on ubuntu runners; the build script wraps the
-        # same emcc invocation that `make wasm` uses locally with podman.
-        run: |
-          docker run --rm -v "$PWD:/src" -w /src \
-            docker.io/emscripten/emsdk:latest \
-            ./wasm/build.sh
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-wasip1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install binaryen (wasm-opt, pinned via npm)
+        run: cd wasm/spike && npm install
+
+      - name: Build rosie.wasm
+        run: cd wasm && ./build.sh
 
       - name: Upload WASM artifact for npm-publish
         uses: actions/upload-artifact@v4

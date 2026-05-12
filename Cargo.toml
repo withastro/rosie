@@ -1,0 +1,36 @@
+[package]
+name = "rosie"
+version = "0.5.6"
+edition = "2021"
+license = "BSD-3-Clause"
+description = "A robot helper for agent skills"
+homepage = "https://github.com/matthewp/rosie"
+repository = "https://github.com/matthewp/rosie"
+publish = false
+
+[lib]
+name = "rosie"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rosie"
+path = "src/bin/rosie.rs"
+
+[dependencies]
+tar = "0.4"
+flate2 = "1.0"
+time = { version = "0.3", features = ["formatting"] }
+lexopt = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# rustls TLS keeps the binary self-contained on macOS/freebsd without
+# linking against system OpenSSL or libcurl.
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[target.'cfg(windows)'.dependencies]
+junction = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

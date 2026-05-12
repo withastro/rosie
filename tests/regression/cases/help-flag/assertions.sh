@@ -1,0 +1,7 @@
+assert_exit_code 0 "$(cat exit_code)"
+assert_contains stdout "Usage:"
+assert_contains stdout "install"
+assert_contains stdout "update"
+assert_contains stdout "remove"
+assert_contains stdout "list"
+assert_contains stdout "agents"

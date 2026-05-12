@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Wrapper that makes the wasm CLI look like a binary to the regression
+# runner. Sets ROSIE_FORCE_WASM=1 and execs the npm package's bin.js.
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
+BIN_JS="$REPO_ROOT/npm/rosie-skills/dist/bin.js"
+
+if [ ! -f "$BIN_JS" ]; then
+    echo "$BIN_JS not found — run 'cd npm/rosie-skills && npm install && npm run build' first" >&2
+    exit 2
+fi
+
+export ROSIE_FORCE_WASM=1
+exec node "$BIN_JS" "$@"

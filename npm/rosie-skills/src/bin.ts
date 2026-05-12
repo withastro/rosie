@@ -36,18 +36,19 @@ function tryNative(): void {
   process.exit(result.status ?? 1);
 }
 
-interface ExitStatus extends Error {
-  name: "ExitStatus";
-  status: number;
-}
-
-function isExitStatus(e: unknown): e is ExitStatus {
-  return typeof e === "object" && e !== null && (e as { name?: string }).name === "ExitStatus";
+interface WasmModule {
+  ccall: (
+    name: string,
+    returnType: "number" | "string" | null,
+    argTypes: Array<"string" | "number">,
+    args: Array<string | number | null>,
+    opts?: { async?: boolean }
+  ) => unknown;
 }
 
 async function runWasm(): Promise<void> {
   const wasmEntry = path.join(__dirname, "..", "wasm", "rosie.js");
-  let createRosie: (opts: { arguments: string[] }) => Promise<unknown>;
+  let createRosie: () => Promise<WasmModule>;
   try {
     const mod = (await import(wasmEntry)) as { default: typeof createRosie };
     createRosie = mod.default;
@@ -60,14 +61,25 @@ async function runWasm(): Promise<void> {
     );
     process.exit(1);
   }
-  // The factory's promise resolves on Module instantiation, NOT on main()
-  // completion. Attach only .catch() and let the event loop drain.
-  // EXIT_RUNTIME=1 throws ExitStatus when C main returns.
-  createRosie({ arguments: args }).catch((e: unknown) => {
-    if (isExitStatus(e)) process.exit(e.status);
-    console.error(e);
-    process.exit(1);
-  });
+  const m = await createRosie();
+  // The wasm module is a reactor (no main()); rosie_api_main takes a
+  // \x1f-separated argv string (unit separator — non-NUL so ccall's
+  // CStr-style marshalling doesn't truncate) and runs the CLI dispatch.
+  // Returns the same integer exit code the native binary would; we map
+  // Rust negative-i32 errors to 255 to match the native binary's u8
+  // exit-code cast.
+  const argv = args.join("\x1f");
+  // async: true routes through the asyncify pump — install/update can do
+  // multiple fetch round-trips and we need the wasm to suspend/resume on
+  // each one.
+  const rc = (await m.ccall(
+    "rosie_api_main",
+    "number",
+    ["string"],
+    [argv],
+    { async: true }
+  )) as number;
+  process.exit(rc < 0 ? 255 : rc);
 }
 
 if (!forceWasm) {

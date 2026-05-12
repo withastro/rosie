@@ -32,9 +32,16 @@ static void json_init(JsonBuf *b) {
 }
 
 static void json_reserve(JsonBuf *b, size_t need) {
+    /* Guard against integer overflow: abort if b->len + need + 1 > SIZE_MAX. */
+    if (need >= (size_t)-1 - b->len) abort();
     if (b->len + need + 1 <= b->cap) return;
     size_t cap = b->cap == 0 ? 256 : b->cap * 2;
-    while (b->len + need + 1 > cap) cap *= 2;
+    if (b->cap > 0 && cap < b->cap) abort(); /* cap * 2 overflowed */
+    while (b->len + need + 1 > cap) {
+        size_t new_cap = cap * 2;
+        if (new_cap < cap) abort(); /* overflow */
+        cap = new_cap;
+    }
     b->buf = spm_realloc(b->buf, cap);
     b->cap = cap;
 }

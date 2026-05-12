@@ -164,6 +164,55 @@ await withTmp('install-ref-npm', async (tmp) => {
     assert(readme.sha === '18.0.0', `expected version 18.0.0 in sha column, got ${readme.sha}`);
 });
 
+// Returns the InstallResult and surfaces installedAgents.
+await withTmp('install-returns-installed-agents', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(path.join(tmp, 'home', '.cursor'), { recursive: true });
+    const result = await rosie.install('fake-org/skills', { cwd: project });
+    assert(result.skills.length === 1, `expected 1 skill, got ${result.skills.length}`);
+    const s = result.skills[0];
+    assert(s.name === 'my-skill', `skill name: ${s.name}`);
+    // claude + cursor are both planted in HOME; both should be detected and
+    // succeed for this clean install.
+    assert(s.installedAgents.includes('claude'), `claude missing: ${s.installedAgents}`);
+    assert(s.installedAgents.includes('cursor'), `cursor missing: ${s.installedAgents}`);
+    assert(s.failedAgents.length === 0, `expected no failures, got ${s.failedAgents}`);
+    // Top-level union mirrors the per-skill record for a single-skill install.
+    assert(result.installedAgents.includes('claude'), 'top-level installedAgents missing claude');
+    assert(result.failedAgents.length === 0, 'top-level failedAgents should be empty');
+});
+
+// Pre-create a regular file where rosie wants to put the symlink — the
+// underlying symlink() call returns EEXIST, agent gets recorded as failed,
+// the others succeed, and install exits cleanly.
+await withTmp('install-partial-agent-failure', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    fs.mkdirSync(path.join(tmp, 'home', '.cursor'), { recursive: true });
+    // Block .claude's symlink slot with a regular file (rosie won't clobber
+    // non-symlink files at link_path).
+    fs.mkdirSync(path.join(project, '.claude/skills'), { recursive: true });
+    fs.writeFileSync(path.join(project, '.claude/skills/my-skill'), 'blocker');
+
+    const result = await rosie.install('fake-org/skills', { cwd: project });
+    assert(result.skills.length === 1, `expected 1 skill, got ${result.skills.length}`);
+    const s = result.skills[0];
+    assert(s.failedAgents.includes('claude'),
+        `expected claude in failedAgents, got ${JSON.stringify(s.failedAgents)}`);
+    assert(s.installedAgents.includes('cursor'),
+        `expected cursor in installedAgents, got ${JSON.stringify(s.installedAgents)}`);
+    assert(!s.installedAgents.includes('claude'), 'claude should not be in installedAgents');
+    // Top-level unions match the per-skill record.
+    assert(result.failedAgents.includes('claude'), 'top-level failedAgents missing claude');
+    assert(result.installedAgents.includes('cursor'), 'top-level installedAgents missing cursor');
+    // The canonical install still lands; lockfile still has the entry.
+    assert(
+        fs.existsSync(path.join(project, '.agents/skills/my-skill/SKILL.md')),
+        'canonical install missing — partial failure should not abort the whole install'
+    );
+    const skills = await rosie.list({ cwd: project });
+    assert(skills.length === 1, 'lockfile should still record the skill');
+});
+
 // ---- summary --------------------------------------------------------------
 
 console.log();

@@ -38,6 +38,41 @@ export interface Agent {
   installPath: string | null;
 }
 
+/**
+ * Per-skill record of what happened during an install/update. Returned
+ * inside `InstallResult.skills`. For reference installs (`--ref`) and npm
+ * references the skill goes to `.agents/references/`, not to any agent's
+ * directory, so both arrays will be empty.
+ */
+export interface SkillResult {
+  /** The skill or reference name as recorded in the lockfile. */
+  name: string;
+  /** Agent `name` field values (e.g. `"claude"`) that received a working symlink. */
+  installedAgents: string[];
+  /**
+   * Agents where the symlink couldn't be created — usually because the
+   * agent's `skills/` directory has restrictive permissions, already
+   * contains a non-symlink entry at that path, or the user is missing
+   * write access. The skill still installs to `.agents/skills/` and to the
+   * other agents; failures here are reported but non-fatal.
+   */
+  failedAgents: string[];
+}
+
+/**
+ * Returned by `install`, `installFromLockfile`, and `update`. `skills` is
+ * per-skill detail; `installedAgents` / `failedAgents` are deduped unions
+ * across every skill in the call.
+ */
+export interface InstallResult {
+  /** One record per skill the operation touched. */
+  skills: SkillResult[];
+  /** Union of every agent that successfully received any skill. Deduped. */
+  installedAgents: string[];
+  /** Union of every agent that failed at least once. Deduped. */
+  failedAgents: string[];
+}
+
 export interface BaseOptions {
   /**
    * Run with this directory as the working directory — same as if you `cd`'d
@@ -119,13 +154,13 @@ export async function agents(opts: BaseOptions = {}): Promise<Agent[]> {
  * Install a skill or reference. With no `spec`, reinstalls everything in
  * `.agents/rosie.lock` (matches the CLI's `rosie install` with no args).
  */
-export async function install(spec: string, opts: InstallOptions = {}): Promise<void> {
+export async function install(spec: string, opts: InstallOptions = {}): Promise<InstallResult> {
   return withCwd(opts.cwd, async () => {
     const mod = await loadModule(opts.onLog);
     const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
     const includes = (opts.include ?? []).join("\n");
     const skipLockfile = opts.lockfile === false ? 1 : 0;
-    await callApi<null>(mod, "rosie_api_install", [
+    return await callApi<InstallResult>(mod, "rosie_api_install", [
       spec,
       opts.skill ?? "",
       agents,
@@ -140,7 +175,7 @@ export async function install(spec: string, opts: InstallOptions = {}): Promise<
 }
 
 /** Reinstall everything from `.agents/rosie.lock`. */
-export async function installFromLockfile(opts: InstallOptions = {}): Promise<void> {
+export async function installFromLockfile(opts: InstallOptions = {}): Promise<InstallResult> {
   return install("", opts);
 }
 
@@ -158,11 +193,18 @@ export async function remove(skillName: string, opts: RemoveOptions = {}): Promi
   });
 }
 
-/** Update one skill (by name) or all entries if no name is given. */
-export async function update(skillName?: string, opts: UpdateOptions = {}): Promise<void> {
+/**
+ * Update one skill (by name) or all entries if no name is given. Returns
+ * the same `InstallResult` shape `install` returns — `skills` covers every
+ * entry that was re-resolved (including those that ended up unchanged).
+ */
+export async function update(skillName?: string, opts: UpdateOptions = {}): Promise<InstallResult> {
   return withCwd(opts.cwd, async () => {
     const mod = await loadModule(opts.onLog);
     const skipLockfile = opts.lockfile === false ? 1 : 0;
-    await callApi<null>(mod, "rosie_api_update", [skillName ?? "", skipLockfile]);
+    return await callApi<InstallResult>(mod, "rosie_api_update", [
+      skillName ?? "",
+      skipLockfile,
+    ]);
   });
 }

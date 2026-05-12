@@ -18,6 +18,7 @@
 pub mod os;
 
 pub mod log;
+pub mod report;
 pub mod util;
 
 pub mod agent;

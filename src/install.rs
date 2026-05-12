@@ -287,12 +287,22 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
     ));
 
     let mut linked = 0;
+    let mut ok_agents = Vec::new();
+    let mut fail_agents = Vec::new();
     for a in &agents {
         if install_skill_local(&skill.name, a, &canonical_link) == 0 {
             linked += 1;
+            ok_agents.push(a.def.name.to_string());
+        } else {
+            fail_agents.push(a.def.name.to_string());
         }
     }
     crate::log::info(&format!("    symlink -> {linked} agent(s)"));
+    crate::report::push(crate::report::InstallReport {
+        skill_name: skill.name.clone(),
+        installed_agents: ok_agents,
+        failed_agents: fail_agents,
+    });
 
     if !opts.skip_lockfile {
         let mut lf = Lockfile::load(Path::new(LOCAL_AGENTS_DIR));
@@ -709,11 +719,21 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
 
     if opts.global {
         for s in &skills {
+            let mut ok_agents = Vec::new();
+            let mut fail_agents = Vec::new();
             for a in &agents {
                 if install_skill_to_agent(s, a) == 0 {
                     installed += 1;
+                    ok_agents.push(a.def.name.to_string());
+                } else {
+                    fail_agents.push(a.def.name.to_string());
                 }
             }
+            crate::report::push(crate::report::InstallReport {
+                skill_name: s.name.clone(),
+                installed_agents: ok_agents,
+                failed_agents: fail_agents,
+            });
         }
         crate::log::info(&format!(
             "Installed {installed} skill(s) to {} agent(s).",
@@ -743,11 +763,21 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
             };
             crate::log::info(&format!("  {}", canonical.display()));
             crate::log::info(&format!("    symlink -> {} agent(s)", agents.len()));
+            let mut ok_agents = Vec::new();
+            let mut fail_agents = Vec::new();
             for a in &agents {
                 if install_skill_local(&s.name, a, &canonical) == 0 {
                     installed += 1;
+                    ok_agents.push(a.def.name.to_string());
+                } else {
+                    fail_agents.push(a.def.name.to_string());
                 }
             }
+            crate::report::push(crate::report::InstallReport {
+                skill_name: s.name.clone(),
+                installed_agents: ok_agents,
+                failed_agents: fail_agents,
+            });
             if let Some(lf) = lf.as_mut() {
                 let sha = resolved
                     .as_ref()
@@ -1057,15 +1087,25 @@ pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
                 agent::detect_agents(false)
             };
             let mut linked = 0;
+            let mut ok_agents = Vec::new();
+            let mut fail_agents = Vec::new();
             for a in &agents {
                 if install_skill_local(&e.skill_name, a, &canonical) == 0 {
                     linked += 1;
+                    ok_agents.push(a.def.name.to_string());
+                } else {
+                    fail_agents.push(a.def.name.to_string());
                 }
             }
             crate::log::info(&format!(
                 "{}: already at {} ({linked} agent symlink(s))",
                 e.skill_name, e.ref_
             ));
+            crate::report::push(crate::report::InstallReport {
+                skill_name: e.skill_name.clone(),
+                installed_agents: ok_agents,
+                failed_agents: fail_agents,
+            });
             present += 1;
             ok += 1;
             continue;

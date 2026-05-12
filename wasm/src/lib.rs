@@ -153,6 +153,66 @@ fn envelope_err_from_last(default: &str) -> *mut c_char {
     envelope_err(&msg)
 }
 
+/// Build the JSON body for an install-shape result, drawing per-skill agent
+/// outcomes from the report buffer. Shape:
+///   {
+///     "skills": [
+///       { "name": "...", "installedAgents": [...], "failedAgents": [...] }
+///     ],
+///     "installedAgents": [...],   // union across all skills, deduped
+///     "failedAgents":    [...]    // union across all skills, deduped
+///   }
+fn install_result_json() -> String {
+    let reports = rosie::report::drain();
+
+    let mut all_ok: Vec<String> = Vec::new();
+    let mut all_fail: Vec<String> = Vec::new();
+    for r in &reports {
+        for n in &r.installed_agents {
+            if !all_ok.iter().any(|x| x == n) {
+                all_ok.push(n.clone());
+            }
+        }
+        for n in &r.failed_agents {
+            if !all_fail.iter().any(|x| x == n) {
+                all_fail.push(n.clone());
+            }
+        }
+    }
+
+    let mut buf = JsonBuf::new();
+    buf.push_str("{\"skills\":[");
+    for (i, r) in reports.iter().enumerate() {
+        if i > 0 {
+            buf.push_char(',');
+        }
+        buf.push_str("{\"name\":");
+        buf.push_string(&r.skill_name);
+        buf.push_str(",\"installedAgents\":");
+        push_str_array(&mut buf, &r.installed_agents);
+        buf.push_str(",\"failedAgents\":");
+        push_str_array(&mut buf, &r.failed_agents);
+        buf.push_char('}');
+    }
+    buf.push_str("],\"installedAgents\":");
+    push_str_array(&mut buf, &all_ok);
+    buf.push_str(",\"failedAgents\":");
+    push_str_array(&mut buf, &all_fail);
+    buf.push_char('}');
+    buf.0
+}
+
+fn push_str_array(buf: &mut JsonBuf, items: &[String]) {
+    buf.push_char('[');
+    for (i, s) in items.iter().enumerate() {
+        if i > 0 {
+            buf.push_char(',');
+        }
+        buf.push_string(s);
+    }
+    buf.push_char(']');
+}
+
 // ---- safe string conversion ---------------------------------------------
 
 unsafe fn cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
@@ -268,6 +328,7 @@ pub unsafe extern "C" fn rosie_api_install(
     skip_lockfile: i32,
 ) -> *mut c_char {
     rosie::log::clear_last_error();
+    rosie::report::clear();
 
     let opts = InstallOptions {
         spec: cstr_to_owned(spec).filter(|s| !s.is_empty()),
@@ -293,7 +354,8 @@ pub unsafe extern "C" fn rosie_api_install(
     if rc != 0 {
         return envelope_err_from_last("install failed");
     }
-    envelope_ok("null")
+    let result = install_result_json();
+    envelope_ok(&result)
 }
 
 #[no_mangle]
@@ -329,6 +391,7 @@ pub unsafe extern "C" fn rosie_api_update(
     skip_lockfile: i32,
 ) -> *mut c_char {
     rosie::log::clear_last_error();
+    rosie::report::clear();
     let mut opts = InstallOptions::default();
     opts.yes = true;
     opts.global = false;
@@ -338,7 +401,8 @@ pub unsafe extern "C" fn rosie_api_update(
     if rc != 0 {
         return envelope_err_from_last("update failed");
     }
-    envelope_ok("null")
+    let result = install_result_json();
+    envelope_ok(&result)
 }
 
 /// Set by JS to flag a Windows host. Drives platform-specific link routing.

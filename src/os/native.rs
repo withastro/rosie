@@ -263,3 +263,51 @@ pub fn set_current_dir(path: &Path) -> Result<()> {
     std::env::set_current_dir(path)
         .map_err(|e| OsError::from_io(&format!("chdir {}", path.display()), e))
 }
+
+/// Recursively copy a directory tree. Mirrors copy_dir_recursive from util.c.
+/// Preserves the file-mode bits on regular files.
+pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    create_dir_all(dst)?;
+    for name in read_dir(src)? {
+        let src_path = src.join(&name);
+        let dst_path = dst.join(&name);
+        let meta = symlink_metadata(&src_path)?;
+        match meta.kind {
+            FileKind::Dir => copy_dir_recursive(&src_path, &dst_path)?,
+            FileKind::File => {
+                std::fs::copy(&src_path, &dst_path).map_err(|e| {
+                    OsError::from_io(
+                        &format!("copy {} -> {}", src_path.display(), dst_path.display()),
+                        e,
+                    )
+                })?;
+                #[cfg(unix)]
+                {
+                    let _ = set_mode(&dst_path, meta.mode);
+                }
+            }
+            FileKind::Symlink => {
+                let target = std::fs::read_link(&src_path).map_err(|e| {
+                    OsError::from_io(&format!("readlink {}", src_path.display()), e)
+                })?;
+                create_link(&target, &dst_path, true)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Create a uniquely-named temp directory under the system temp dir.
+pub fn create_temp_dir(prefix: &str) -> Result<PathBuf> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let base = std::env::temp_dir();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let dir = base.join(format!("{prefix}-{pid}-{nanos:x}"));
+    create_dir_all(&dir)?;
+    Ok(dir)
+}

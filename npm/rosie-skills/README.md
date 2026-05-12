@@ -35,6 +35,43 @@ const agents = await rosie.agents();
 
 All functions return Promises. Failures throw `Error` with a descriptive message.
 
+### Install result
+
+`install`, `installFromLockfile`, and `update` return an `InstallResult`:
+
+```ts
+interface InstallResult {
+  skills: Array<{
+    name: string;
+    kind: "skill" | "reference";
+    installedAgents: string[];     // e.g. ["claude", "cursor"]
+    failedAgents: string[];        // agents the symlink couldn't reach
+  }>;
+  installedAgents: string[];       // deduped union across all skills
+  failedAgents: string[];          // deduped union across all skills
+  installedInstruction:            // file rosie wrote the references block to
+    | "AGENTS.md"
+    | "CLAUDE.md"
+    | "GEMINI.md"
+    | ".github/copilot-instructions.md"
+    | null;                         // null for pure-skill installs
+}
+```
+
+```js
+const result = await rosie.install('anthropics/skills');
+if (result.failedAgents.length > 0) {
+  console.warn(`couldn't symlink into: ${result.failedAgents.join(', ')}`);
+}
+```
+
+`failedAgents` is non-fatal: rosie tries every detected agent and reports the
+misses. The canonical install at `.agents/skills/<name>/` still lands and the
+lockfile entry is still recorded, so a subsequent run after fixing
+permissions will retry the failed agents.
+
+`remove()` returns `void`.
+
 ### Targeted install
 
 ```js
@@ -123,7 +160,7 @@ For native installs on platforms we don't ship a binary for:
 - Homebrew (macOS / Linux): `brew tap matthewp/rosie && brew install rosie`
 - Arch Linux: `yay -S rosie`
 - Debian/Ubuntu: see <https://github.com/matthewp/rosie>
-- Source: clone the repo and run `make release`
+- Source: clone the repo and run `cargo build --release`
 
 ## License
 

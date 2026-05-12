@@ -65,6 +65,11 @@ ROSIE_BINARY="$(cd "$(dirname "$ROSIE_BINARY")" && pwd)/$(basename "$ROSIE_BINAR
 # --- mock server lifecycle ----------------------------------------------------
 
 FIXTURE_ROOT="$HERE/fixtures/repos"
+# The tarball fixtures are generated, not checked in. Build them if any are
+# missing — first run on CI / a fresh clone won't have them.
+if [ ! -f "$FIXTURE_ROOT/fake-org/skills/archive/refs/heads/main.tar.gz" ]; then
+    "$HERE/fixtures/build.sh" >/dev/null
+fi
 mkdir -p "$FIXTURE_ROOT"
 
 MOCK_LOG="/tmp/rosie-mock-server.log"

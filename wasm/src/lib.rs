@@ -76,7 +76,11 @@ static mut ASYNCIFY_BUF: [u8; ASYNCIFY_BUF_SIZE] = [0; ASYNCIFY_BUF_SIZE];
 
 #[no_mangle]
 pub extern "C" fn asyncify_buf_ptr() -> *mut u8 {
-    unsafe { ASYNCIFY_BUF.as_mut_ptr() }
+    // `addr_of_mut!` instead of `&mut ASYNCIFY_BUF` avoids the 2024-edition
+    // static_mut_refs lint. Taking a raw pointer is safe; only deref
+    // would be unsafe, and we hand the pointer to JS which never derefs
+    // it directly — asyncify_start_unwind reads the buffer header.
+    std::ptr::addr_of_mut!(ASYNCIFY_BUF) as *mut u8
 }
 
 #[no_mangle]

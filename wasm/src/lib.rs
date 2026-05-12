@@ -157,13 +157,16 @@ fn envelope_err_from_last(default: &str) -> *mut c_char {
 /// outcomes from the report buffer. Shape:
 ///   {
 ///     "skills": [
-///       { "name": "...", "installedAgents": [...], "failedAgents": [...] }
+///       { "name": "...", "kind": "skill"|"reference",
+///         "installedAgents": [...], "failedAgents": [...] }
 ///     ],
-///     "installedAgents": [...],   // union across all skills, deduped
-///     "failedAgents":    [...]    // union across all skills, deduped
+///     "installedAgents": [...],     // union across all skills, deduped
+///     "failedAgents":    [...],     // union across all skills, deduped
+///     "installedInstruction": "AGENTS.md" | "CLAUDE.md" | ... | null
 ///   }
 fn install_result_json() -> String {
     let reports = rosie::report::drain();
+    let instruction_file = rosie::report::take_instruction_file();
 
     let mut all_ok: Vec<String> = Vec::new();
     let mut all_fail: Vec<String> = Vec::new();
@@ -188,6 +191,8 @@ fn install_result_json() -> String {
         }
         buf.push_str("{\"name\":");
         buf.push_string(&r.skill_name);
+        buf.push_str(",\"kind\":");
+        buf.push_string(r.kind.as_str());
         buf.push_str(",\"installedAgents\":");
         push_str_array(&mut buf, &r.installed_agents);
         buf.push_str(",\"failedAgents\":");
@@ -198,6 +203,11 @@ fn install_result_json() -> String {
     push_str_array(&mut buf, &all_ok);
     buf.push_str(",\"failedAgents\":");
     push_str_array(&mut buf, &all_fail);
+    buf.push_str(",\"installedInstruction\":");
+    match instruction_file {
+        Some(s) => buf.push_string(&s),
+        None => buf.push_null(),
+    }
     buf.push_char('}');
     buf.0
 }

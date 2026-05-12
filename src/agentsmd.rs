@@ -162,6 +162,9 @@ pub fn rebuild_block(lf: &Lockfile) -> i32 {
         crate::log::error(&format!("Failed to write {}: {e}", target.display()));
         return -1;
     }
+    // Record which file we touched so the wasm/JS API can surface it as
+    // InstallResult.installedInstruction.
+    crate::report::set_instruction_file(Some(target.to_string_lossy().into_owned()));
     if created {
         crate::log::info(&format!(
             "Created {} with references block",

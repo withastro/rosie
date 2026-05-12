@@ -40,24 +40,44 @@ export interface Agent {
 
 /**
  * Per-skill record of what happened during an install/update. Returned
- * inside `InstallResult.skills`. For reference installs (`--ref`) and npm
- * references the skill goes to `.agents/references/`, not to any agent's
- * directory, so both arrays will be empty.
+ * inside `InstallResult.skills`. For reference installs (`kind: "reference"`),
+ * `installedAgents` and `failedAgents` are always empty — references go to
+ * `.agents/references/`, not to any agent's directory.
  */
 export interface SkillResult {
   /** The skill or reference name as recorded in the lockfile. */
   name: string;
-  /** Agent `name` field values (e.g. `"claude"`) that received a working symlink. */
+  /**
+   * `"skill"` for entries copied into `.agents/skills/` and symlinked into
+   * detected agents. `"reference"` for entries (`--ref`, `--ref --npm`)
+   * written under `.agents/references/`.
+   */
+  kind: "skill" | "reference";
+  /** Agent `name` values (e.g. `"claude"`) that received a working symlink. */
   installedAgents: string[];
   /**
    * Agents where the symlink couldn't be created — usually because the
    * agent's `skills/` directory has restrictive permissions, already
    * contains a non-symlink entry at that path, or the user is missing
-   * write access. The skill still installs to `.agents/skills/` and to the
-   * other agents; failures here are reported but non-fatal.
+   * write access. The skill still installs to `.agents/skills/` and to
+   * the other agents; failures here are reported but non-fatal.
    */
   failedAgents: string[];
 }
+
+/**
+ * Path of the project's agent-instructions file (`AGENTS.md`, `CLAUDE.md`,
+ * `GEMINI.md`, or `.github/copilot-instructions.md`) that rosie wrote the
+ * references block into during a call. `null` when nothing was written —
+ * pure-skill installs and remove operations leave instruction files
+ * untouched.
+ */
+export type InstalledInstruction =
+  | "AGENTS.md"
+  | "CLAUDE.md"
+  | "GEMINI.md"
+  | ".github/copilot-instructions.md"
+  | null;
 
 /**
  * Returned by `install`, `installFromLockfile`, and `update`. `skills` is
@@ -71,6 +91,11 @@ export interface InstallResult {
   installedAgents: string[];
   /** Union of every agent that failed at least once. Deduped. */
   failedAgents: string[];
+  /**
+   * Which instruction file (if any) had its references block rewritten
+   * during this call. See `InstalledInstruction`.
+   */
+  installedInstruction: InstalledInstruction;
 }
 
 export interface BaseOptions {

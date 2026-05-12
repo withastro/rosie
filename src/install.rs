@@ -299,6 +299,7 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
     }
     crate::log::info(&format!("    symlink -> {linked} agent(s)"));
     crate::report::push(crate::report::InstallReport {
+        kind: crate::report::ReportKind::Skill,
         skill_name: skill.name.clone(),
         installed_agents: ok_agents,
         failed_agents: fail_agents,
@@ -438,6 +439,12 @@ fn install_npm_references(opts: &InstallOptions) -> i32 {
             lf.upsert(&name, &source, "-", &version, &now, false, LockKind::Ref);
         }
         crate::log::info(&format!("  {name}"));
+        crate::report::push(crate::report::InstallReport {
+            skill_name: name.clone(),
+            kind: crate::report::ReportKind::Reference,
+            installed_agents: Vec::new(),
+            failed_agents: Vec::new(),
+        });
         installed += 1;
     }
 
@@ -521,6 +528,12 @@ fn install_reference_from_extracted(
         return -1;
     }
     crate::log::info(&format!("  {}", ref_file.display()));
+    crate::report::push(crate::report::InstallReport {
+        skill_name: name.clone(),
+        kind: crate::report::ReportKind::Reference,
+        installed_agents: Vec::new(),
+        failed_agents: Vec::new(),
+    });
 
     // Build the lockfile source. For skill-based refs we encode the skill
     // name as "owner/repo#skill" so update/reinstall round-trip.
@@ -731,6 +744,7 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
             }
             crate::report::push(crate::report::InstallReport {
                 skill_name: s.name.clone(),
+                kind: crate::report::ReportKind::Skill,
                 installed_agents: ok_agents,
                 failed_agents: fail_agents,
             });
@@ -775,6 +789,7 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
             }
             crate::report::push(crate::report::InstallReport {
                 skill_name: s.name.clone(),
+                kind: crate::report::ReportKind::Skill,
                 installed_agents: ok_agents,
                 failed_agents: fail_agents,
             });
@@ -1103,6 +1118,7 @@ pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
             ));
             crate::report::push(crate::report::InstallReport {
                 skill_name: e.skill_name.clone(),
+                kind: crate::report::ReportKind::Skill,
                 installed_agents: ok_agents,
                 failed_agents: fail_agents,
             });

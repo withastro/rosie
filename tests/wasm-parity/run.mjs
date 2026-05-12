@@ -182,6 +182,29 @@ await withTmp('install-returns-installed-agents', async (tmp) => {
     assert(result.failedAgents.length === 0, 'top-level failedAgents should be empty');
 });
 
+// kind is "reference" for --ref installs and installedInstruction points
+// at the file rosie wrote the references block into.
+await withTmp('install-ref-returns-instruction-file', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    const result = await rosie.install('fake-org/skills', { cwd: project, ref: true });
+    assert(result.skills.length === 1, `expected 1 entry, got ${result.skills.length}`);
+    assert(result.skills[0].kind === 'reference',
+        `kind: expected "reference", got "${result.skills[0].kind}"`);
+    assert(result.installedInstruction === 'AGENTS.md',
+        `installedInstruction: expected "AGENTS.md", got ${JSON.stringify(result.installedInstruction)}`);
+});
+
+// Pre-staged CLAUDE.md → references go there instead of AGENTS.md.
+await withTmp('install-ref-claude-target', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    fs.writeFileSync(path.join(project, 'CLAUDE.md'), '# Project\n');
+    const result = await rosie.install('fake-org/skills', { cwd: project, ref: true });
+    assert(result.installedInstruction === 'CLAUDE.md',
+        `installedInstruction: expected "CLAUDE.md", got ${JSON.stringify(result.installedInstruction)}`);
+    assert(!fs.existsSync(path.join(project, 'AGENTS.md')),
+        'AGENTS.md should not be created when CLAUDE.md is the target');
+});
+
 // Pre-create a regular file where rosie wants to put the symlink — the
 // underlying symlink() call returns EEXIST, agent gets recorded as failed,
 // the others succeed, and install exits cleanly.

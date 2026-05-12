@@ -1,0 +1,6 @@
+# Refs advertisement for fake-org/skills. SHAs are intentional placeholders;
+# rosie only requires 40-char hex.
+HEAD 1111111111111111111111111111111111111111
+refs/heads/main 1111111111111111111111111111111111111111
+refs/tags/v1.0.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+refs/tags/v1.0.0^{} bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

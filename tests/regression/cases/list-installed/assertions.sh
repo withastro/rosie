@@ -1,0 +1,5 @@
+assert_exit_code 0 "$(cat exit_code)"
+assert_contains stdout "Installed skills"
+assert_contains stdout "my-skill"
+assert_contains stdout "fake-org/skills@v1.0.0"
+assert_contains stdout "[skill]"

@@ -1,0 +1,14 @@
+[build]
+target = "wasm32-wasip1"
+
+# Force-export the symbols Node WASI needs to drive the reactor flow:
+#   - __wasm_call_ctors: wasi-libc startup constructors
+#   - _initialize:       the export Node WASI's `initialize(instance)` calls
+#
+# Rust's wasm32-wasip1 cdylib doesn't emit `_initialize` by default. We
+# provide a Rust-side stub in src/lib.rs that calls __wasm_call_ctors.
+[target.wasm32-wasip1]
+rustflags = [
+    "-C", "link-arg=--export=__wasm_call_ctors",
+    "-C", "link-arg=--export=_initialize",
+]

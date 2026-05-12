@@ -9,7 +9,7 @@ PORT="${PORT:-8765}"
 
 # Build wasm + TS dist if they're missing.
 if [ ! -f "$REPO_ROOT/npm/rosie-skills/wasm/rosie.wasm" ]; then
-    (cd "$REPO_ROOT/wasm" && ./build-rust.sh)
+    (cd "$REPO_ROOT/wasm" && ./build.sh)
 fi
 if [ ! -f "$REPO_ROOT/npm/rosie-skills/dist/index.js" ]; then
     (cd "$REPO_ROOT/npm/rosie-skills" && npm install --silent && npm run build)

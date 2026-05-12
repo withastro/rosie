@@ -290,7 +290,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y binaryen
 
       - name: Build rosie.wasm
-        run: cd wasm && ./build-rust.sh
+        run: cd wasm && ./build.sh
 
       - name: Upload WASM artifact for npm-publish
         uses: actions/upload-artifact@v4

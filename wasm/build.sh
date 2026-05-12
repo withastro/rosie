@@ -1,84 +1,59 @@
-#!/bin/bash
-# WASM build script for rosie.
-# Designed to be run inside the emscripten/emsdk container (where emcc,
-# emconfigure, emmake are on PATH). Invoke via `make wasm` from the repo root.
-set -e
+#!/usr/bin/env bash
+# Build the Rust wasm crate to wasm32-wasip1 and post-process with
+# wasm-opt --asyncify. Output: npm/rosie-skills/wasm/rosie.{js,wasm}.
+#
+# Tooling: requires `cargo` with the wasm32-wasip1 target, plus `wasm-opt`
+# (pinned via the local binaryen npm dep in wasm/spike/, or system).
+#
+# Build via `cd wasm && ./build.sh`.
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$HERE/.." && pwd)"
+OUT_DIR="$REPO_ROOT/npm/rosie-skills/wasm"
 
-BUILD=build/wasm
-OUT=npm/rosie-skills/wasm
-LA_VERSION=3.7.7
-
-mkdir -p "$BUILD" "$OUT"
-
-# -- 1. Cross-compile libarchive (cached) ---------------------------------
-if [ ! -f "$BUILD/libarchive/lib/libarchive.a" ]; then
-  echo ">>> Fetching libarchive $LA_VERSION"
-  rm -rf "$BUILD/libarchive-src"
-  curl -sL "https://github.com/libarchive/libarchive/releases/download/v$LA_VERSION/libarchive-$LA_VERSION.tar.gz" \
-    | tar -xz -C "$BUILD"
-  mv "$BUILD/libarchive-$LA_VERSION" "$BUILD/libarchive-src"
-
-  echo ">>> Configuring libarchive for WASM"
-  cd "$BUILD/libarchive-src"
-  # USE_ZLIB=1 surfaces emscripten's bundled zlib to autoconf so libarchive
-  # detects it and links its built-in gzip codec — otherwise libarchive falls
-  # back to spawning /bin/gzip at runtime, which doesn't exist in WASM.
-  CFLAGS="-sUSE_ZLIB=1" LDFLAGS="-sUSE_ZLIB=1" \
-  emconfigure ./configure \
-    --prefix="$REPO_ROOT/$BUILD/libarchive" \
-    --enable-static --disable-shared \
-    --with-zlib \
-    --without-iconv --without-xml2 --without-expat \
-    --without-bz2lib --without-lzma --without-zstd --without-lz4 \
-    --without-openssl --without-mbedtls --without-cng \
-    --without-nettle \
-    --disable-bsdtar --disable-bsdcpio --disable-bsdcat \
-    --disable-acl --disable-xattr
-  echo ">>> Building libarchive"
-  EMCC_CFLAGS="-sUSE_ZLIB=1" emmake make -j"$(nproc)"
-  emmake make install
-  cd "$REPO_ROOT"
+# Pick wasm-opt: local (preferred, pinned to binaryen 121) or system.
+WASM_OPT=""
+if [ -x "$HERE/spike/node_modules/.bin/wasm-opt" ]; then
+    WASM_OPT="$HERE/spike/node_modules/.bin/wasm-opt"
+elif command -v wasm-opt >/dev/null 2>&1; then
+    WASM_OPT="$(command -v wasm-opt)"
+else
+    echo "wasm-opt not found." >&2
+    echo "Either install binaryen (apt install binaryen) or run" >&2
+    echo "  (cd $HERE/spike && npm install)" >&2
+    exit 1
 fi
 
-# -- 2. Compile + link rosie.wasm -----------------------------------------
-# download.c and resolve.c contain `#ifndef __EMSCRIPTEN__` guards around
-# their curl-using code; emcc defines __EMSCRIPTEN__ automatically, so those
-# blocks drop out. wasm/http-stub.c supplies the missing HTTP entry points.
-SRCS=(
-  src/agent.c src/agentsmd.c src/archive.c src/download.c
-  src/install.c src/link.c src/lockfile.c src/main.c src/npm.c
-  src/resolve.c src/skill.c src/util.c
-  wasm/api.c wasm/http-stub.c
-)
+mkdir -p "$OUT_DIR"
 
-# EXIT_RUNTIME=1 lets the CLI shim observe ExitStatus when main() returns;
-# API callers pass noInitialRun=true so main() never runs and ccall stays
-# usable for repeated invocations.
-echo ">>> Compiling rosie.wasm"
-emcc "${SRCS[@]}" \
-  -O2 \
-  -Wall -Wextra \
-  -std=c99 \
-  -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE \
-  -I"$BUILD/libarchive/include" \
-  "$BUILD/libarchive/lib/libarchive.a" \
-  -sUSE_ZLIB=1 \
-  -sASYNCIFY=1 \
-  -sALLOW_MEMORY_GROWTH=1 \
-  -sINITIAL_MEMORY=33554432 \
-  -sMODULARIZE=1 \
-  -sEXPORT_ES6=1 \
-  -sEXPORT_NAME=createRosie \
-  -sENVIRONMENT=node \
-  -sNODERAWFS=1 \
-  -sEXIT_RUNTIME=1 \
-  -sEXPORTED_FUNCTIONS=_main,_malloc,_free,_rosie_api_list_installed,_rosie_api_agents,_rosie_api_install,_rosie_api_remove,_rosie_api_update,_rosie_api_set_verbose,_rosie_api_install_log_bridge,_rosie_api_set_host_platform \
-  -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,UTF8ToString \
-  --js-library wasm/http-lib.js \
-  -o "$OUT/rosie.js"
+echo ">>> cargo build --release --target wasm32-wasip1"
+cd "$HERE"
+cargo build --release --quiet
 
-echo ">>> Build complete:"
-ls -la "$OUT/"
+RAW="$HERE/target/wasm32-wasip1/release/rosie_wasm.wasm"
+if [ ! -f "$RAW" ]; then
+    echo "expected build output not found: $RAW" >&2
+    exit 1
+fi
+
+echo ">>> wasm-opt --asyncify"
+# --asyncify-imports declares which JS-side imports may suspend. We list the
+# HTTP fetch pair. Filesystem ops are sync from rosie's perspective (the JS
+# shim does them synchronously via Node's fs sync API).
+"$WASM_OPT" --asyncify \
+    --pass-arg=asyncify-imports@env.rosie_fetch_to_file,env.rosie_fetch_to_buffer \
+    --enable-bulk-memory \
+    --enable-bulk-memory-opt \
+    --enable-multivalue \
+    --enable-nontrapping-float-to-int \
+    --enable-sign-ext \
+    -O2 \
+    "$RAW" \
+    -o "$OUT_DIR/rosie.wasm"
+
+# Drop the JS shim into the same directory so wasm-loader.ts can import it.
+cp "$HERE/shim.js" "$OUT_DIR/rosie.js"
+
+echo ">>> built $OUT_DIR/rosie.wasm ($(stat -c %s "$OUT_DIR/rosie.wasm") bytes)"
+echo ">>> shim   $OUT_DIR/rosie.js"

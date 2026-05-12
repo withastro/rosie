@@ -42,6 +42,8 @@ if [ ! -x "$ROSIE_BINARY" ]; then
     echo "build first: (cd $REPO_ROOT && make)" >&2
     exit 2
 fi
+# Canonicalize so per-case scripts running in a tmpdir still find the binary.
+ROSIE_BINARY="$(cd "$(dirname "$ROSIE_BINARY")" && pwd)/$(basename "$ROSIE_BINARY")"
 
 # Load assertion + tree-diff helpers.
 # shellcheck source=lib/assert.sh

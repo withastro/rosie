@@ -3,7 +3,6 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: ${LIBCURL_DEP}, libarchive13
 Maintainer: Matthew Phillips <matthew@matthewphillips.info>
 Homepage: https://github.com/matthewp/rosie
 Description: A robot helper for agent skills

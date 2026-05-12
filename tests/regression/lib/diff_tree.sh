@@ -15,10 +15,16 @@
 # placeholder "TIMESTAMP" before diffing.
 
 # Replace ISO 8601 timestamps in a file with "TIMESTAMP" in-place.
+# Uses a temp-file rewrite because `sed -i` is non-portable between GNU and
+# BSD: GNU `sed -i` edits in place with no argument; BSD `sed -i` requires a
+# backup suffix and would otherwise consume the script as the suffix.
 normalize_lockfile_timestamps() {
     if [ -f "$1" ]; then
+        local tmp
+        tmp=$(mktemp)
         # ISO 8601: YYYY-MM-DDTHH:MM:SSZ
-        sed -i 's/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}Z/TIMESTAMP/g' "$1"
+        sed 's/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}Z/TIMESTAMP/g' "$1" > "$tmp"
+        mv "$tmp" "$1"
     fi
 }
 

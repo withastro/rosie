@@ -179,6 +179,14 @@ for case_dir in "$HERE/cases"/*/; do
         printf '  \e[31mFAIL\e[0m %s (%d failure(s))\n' "$case_name" "$CASE_FAILURES"
         TOTAL_FAILURES=$((TOTAL_FAILURES + CASE_FAILURES))
         FAILED_CASES+=("$case_name")
+        # Dump captured rosie output to help diagnose CI failures. Per-case
+        # run.sh scripts write to stdout/stderr/exit_code in $tmp/project.
+        for f in stdout stderr exit_code; do
+            if [ -s "$tmp/project/$f" ]; then
+                printf '    ===== %s =====\n' "$f"
+                sed 's/^/    /' "$tmp/project/$f"
+            fi
+        done
     fi
 
     if [ "$KEEP_TMP" -eq 1 ]; then

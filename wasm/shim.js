@@ -11,12 +11,15 @@
 //      (rosie_api_* exports + JSON envelope + Module.__rosieLog__) is
 //      identical to the old emcc build.
 
-'use strict';
+// ES module — the rosie-skills npm package is "type": "module".
 
-const fs = require('node:fs');
-const path = require('node:path');
-const { WASI } = require('node:wasi');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { WASI } from 'node:wasi';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = path.join(__dirname, 'rosie.wasm');
 
 // ---------------------------------------------------------------------------
@@ -332,7 +335,6 @@ async function createRosie(opts = {}) {
     };
 
     envImports.rosie_temp_dir = (outBufPtr, outLenPtr) => {
-        const os = require('node:os');
         return setOwnedBytes(outBufPtr, outLenPtr, Buffer.from(os.tmpdir()));
     };
 
@@ -392,7 +394,10 @@ async function createRosie(opts = {}) {
     // ---- Module shape (emscripten-compatible) ----
 
     const Module = {
-        _free: (ptr) => exports.rosie_free(ptr, 0),
+        // emscripten's _free only takes a pointer. Our owned-buffer pairs
+        // need (ptr, len), so map _free to rosie_free_cstring — which is
+        // what the TS wrapper actually uses (to release JSON envelopes).
+        _free: (ptr) => exports.rosie_free_cstring(ptr),
         get HEAPU8() {
             return new Uint8Array(memory.buffer);
         },
@@ -476,5 +481,5 @@ async function createRosie(opts = {}) {
     return Module;
 }
 
-module.exports = createRosie;
-module.exports.default = createRosie;
+export default createRosie;
+export { createRosie };

@@ -55,6 +55,16 @@ pub unsafe extern "C" fn rosie_free(ptr: *mut u8, size: usize) {
     }
 }
 
+/// Free a NUL-terminated C string that one of the rosie_api_* functions
+/// returned. The JSON envelopes are produced via CString::into_raw, so this
+/// is the only correct way to release them. JS calls it via Module._free.
+#[no_mangle]
+pub unsafe extern "C" fn rosie_free_cstring(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        let _ = CString::from_raw(ptr);
+    }
+}
+
 // ---- Asyncify buffer -----------------------------------------------------
 //
 // Asyncify needs a writable region with an 8-byte [stack_start, stack_end]

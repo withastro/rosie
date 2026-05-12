@@ -34,4 +34,4 @@ pub mod npm;
 pub mod resolve;
 pub mod skill;
 
-pub const ROSIE_VERSION: &str = "0.5.6";
+pub const ROSIE_VERSION: &str = env!("CARGO_PKG_VERSION");

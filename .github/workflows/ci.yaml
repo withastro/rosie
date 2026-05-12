@@ -38,8 +38,8 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install binaryen (wasm-opt)
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Install binaryen (wasm-opt, pinned via npm)
+        run: cd wasm/spike && npm install
 
       - name: Build wasm
         run: cd wasm && ./build.sh

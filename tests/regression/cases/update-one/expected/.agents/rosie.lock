@@ -1,0 +1,3 @@
+# rosie-lock v1
+alpha-skill fake-org/multi-skills main 9999999999999999999999999999999999999999 TIMESTAMP auto skill
+my-skill fake-org/skills v1.0.0 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb TIMESTAMP pin skill

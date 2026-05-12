@@ -143,24 +143,56 @@ async function createRosie(opts = {}) {
         }
     });
 
-    envImports.rosie_fetch_to_buffer = wrapAsync(
-        async (urlPtr, urlLen, acceptPtr, acceptLen, outBufPtr, outLenPtr) => {
-            const url = decodeStr(urlPtr, urlLen);
-            const accept = acceptLen > 0 ? decodeStr(acceptPtr, acceptLen) : null;
+    // fetch_to_buffer needs to allocate wasm memory for the response body and
+    // hand the pointer back. We can't safely call wasm exports (rosie_malloc)
+    // while asyncify state is "unwinding" — the asyncify pass may have
+    // instrumented Rust's allocator and the saved-state buffer is mid-use.
+    // Instead we stash the bytes in module scope and write them to wasm
+    // memory only AFTER stop_rewind has dropped state back to NORMAL.
+
+    let pendingFetchBuffer = null; // { status, bytes }
+
+    envImports.rosie_fetch_to_buffer = function (
+        urlPtr,
+        urlLen,
+        acceptPtr,
+        acceptLen,
+        outBufPtr,
+        outLenPtr
+    ) {
+        const state = asyncifyState();
+        if (state === STATE_REWINDING) {
+            exports.asyncify_stop_rewind();
+            const r = pendingFetchBuffer;
+            pendingFetchBuffer = null;
+            if (r && r.bytes) {
+                setOwnedBytes(outBufPtr, outLenPtr, r.bytes);
+            }
+            return r ? r.status : -1;
+        }
+        if (state !== STATE_NORMAL) {
+            throw new Error(`unexpected asyncify state on fetch_to_buffer: ${state}`);
+        }
+        const url = decodeStr(urlPtr, urlLen);
+        const accept = acceptLen > 0 ? decodeStr(acceptPtr, acceptLen) : null;
+        pendingPromise = (async () => {
             try {
                 const headers = { 'User-Agent': 'git/rosie-1.0' };
                 if (accept) headers['Accept'] = accept;
                 const res = await fetch(url, { headers, redirect: 'follow' });
-                if (!res.ok) return res.status;
-                const bytes = new Uint8Array(await res.arrayBuffer());
-                setOwnedBytes(outBufPtr, outLenPtr, bytes);
+                let bytes = null;
+                if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
+                pendingFetchBuffer = { status: res.status, bytes };
                 return res.status;
             } catch (e) {
                 process.stderr.write(`fetch_to_buffer error: ${e.message}\n`);
+                pendingFetchBuffer = { status: -1, bytes: null };
                 return -1;
             }
-        }
-    );
+        })();
+        exports.asyncify_start_unwind(asyncifyDataPtr);
+        return 0;
+    };
 
     // ---- File system ----
     envImports.rosie_fs_write = (pathPtr, pathLen, dataPtr, dataLen) => {

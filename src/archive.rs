@@ -11,11 +11,13 @@
 
 use crate::os;
 use flate2::read::GzDecoder;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use tar::Archive;
+use tar::{Archive, EntryType};
 
-/// Extract the tar.gz at `archive_path` into `dest_dir`. The destination is
-/// created if needed.
+/// Extract the tar.gz at `archive_path` into `dest_dir`. Goes through the
+/// `os` module for every disk write so the wasm build's JS shim handles
+/// I/O (asyncify makes std::fs unsafe in wasm; see the spike notes).
 pub fn extract_tarball(archive_path: &Path, dest_dir: &Path) -> i32 {
     let bytes = match os::read(archive_path) {
         Ok(v) => v,
@@ -33,8 +35,6 @@ pub fn extract_tarball(archive_path: &Path, dest_dir: &Path) -> i32 {
 
     let gz = GzDecoder::new(&bytes[..]);
     let mut ar = Archive::new(gz);
-    ar.set_preserve_permissions(true);
-    ar.set_overwrite(true);
 
     let entries = match ar.entries() {
         Ok(e) => e,
@@ -52,6 +52,7 @@ pub fn extract_tarball(archive_path: &Path, dest_dir: &Path) -> i32 {
                 return -1;
             }
         };
+        let kind = entry.header().entry_type();
         let path = match entry.path() {
             Ok(p) => p.into_owned(),
             Err(e) => {
@@ -62,12 +63,53 @@ pub fn extract_tarball(archive_path: &Path, dest_dir: &Path) -> i32 {
         let display = path.display().to_string();
         crate::log::debug(&format!("  extracting: {display}"));
         let full: PathBuf = dest_dir.join(&path);
-        if let Err(e) = entry.unpack(&full) {
-            crate::log::error(&format!("Error extracting {display}: {e}"));
+
+        if let Err(rc) = extract_entry(&mut entry, &full, kind) {
+            crate::log::error(&format!("Error extracting {display}: {rc}"));
             return -1;
         }
     }
     0
+}
+
+fn extract_entry<R: Read>(
+    entry: &mut tar::Entry<R>,
+    full: &Path,
+    kind: EntryType,
+) -> std::result::Result<(), os::OsError> {
+    match kind {
+        EntryType::Directory => os::create_dir_all(full),
+        EntryType::Regular | EntryType::Continuous => {
+            if let Some(parent) = full.parent() {
+                os::create_dir_all(parent)?;
+            }
+            let mut bytes = Vec::new();
+            entry
+                .read_to_end(&mut bytes)
+                .map_err(|e| os::OsError(format!("read entry: {e}")))?;
+            os::write(full, &bytes)?;
+            // Preserve file mode bits if the archive carries them.
+            if let Ok(mode) = entry.header().mode() {
+                let _ = os::set_mode(full, mode);
+            }
+            Ok(())
+        }
+        EntryType::Symlink => {
+            if let Some(parent) = full.parent() {
+                os::create_dir_all(parent)?;
+            }
+            let target = entry
+                .link_name()
+                .map_err(|e| os::OsError(format!("link_name: {e}")))?
+                .ok_or_else(|| os::OsError("missing symlink target".into()))?
+                .into_owned();
+            os::create_link(&target, full, false)
+        }
+        _ => {
+            // pax_global_header etc. — skip.
+            Ok(())
+        }
+    }
 }
 
 /// Find the first path component of the first entry in the archive. GitHub

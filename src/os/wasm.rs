@@ -454,10 +454,15 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 }
 
 pub fn create_temp_dir(prefix: &str) -> Result<PathBuf> {
+    // `std::process::id()` is unsupported on wasm32-wasip1 — calling it
+    // panics with "unsupported". Use a static counter + the wall-clock to
+    // build a unique-enough name. wasm runs single-threaded.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = now_unix_seconds() as u128;
-    let pid = std::process::id();
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
     let base = temp_dir();
-    let dir = PathBuf::from(base).join(format!("{prefix}-{pid}-{nanos:x}"));
+    let dir = PathBuf::from(base).join(format!("{prefix}-{seq:x}-{nanos:x}"));
     create_dir_all(&dir)?;
     Ok(dir)
 }

@@ -22,6 +22,16 @@ REPOS="$HERE/repos"
 rm -rf "$REPOS"
 mkdir -p "$REPOS"
 
+# We need GNU tar for the deterministic flags below (--sort, --mtime,
+# --owner, --group, --numeric-owner). On macOS the default `tar` is BSD tar,
+# which rejects those flags. Prefer `gtar` when available (brew's gnu-tar
+# installs as gtar).
+if command -v gtar >/dev/null 2>&1; then
+    TAR=gtar
+else
+    TAR=tar
+fi
+
 # Walk sources/<owner>/<repo>/<ref>/ directories.
 find "$SOURCES" -mindepth 3 -maxdepth 3 -type d | while read -r ref_dir; do
     ref=$(basename "$ref_dir")
@@ -43,9 +53,8 @@ find "$SOURCES" -mindepth 3 -maxdepth 3 -type d | while read -r ref_dir; do
     cp -R "$ref_dir" "$stage/$repo-$ref"
 
     # Deterministic tar: sorted file order, fixed mtime/uid/gid/numeric.
-    # GNU tar flags. (BSD tar — on macOS — would need a different incantation;
-    # tests are expected to run on Linux primarily.)
-    tar --sort=name \
+    # Requires GNU tar (see $TAR resolution above).
+    "$TAR" --sort=name \
         --mtime='2025-01-01T00:00:00Z' \
         --owner=0 --group=0 --numeric-owner \
         -C "$stage" -czf "$out_tar" "$repo-$ref"

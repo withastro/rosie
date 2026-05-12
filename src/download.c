@@ -253,16 +253,26 @@ void package_spec_free(PackageSpec *spec) {
     spm_free(spec);
 }
 
+// Returns the GitHub base URL (no trailing slash). Defaults to
+// "https://github.com" but can be overridden via the ROSIE_GITHUB_BASE_URL
+// env var. Used by the regression test suite to point rosie at a local
+// mock server.
+static const char *github_base_url(void) {
+    const char *env = getenv("ROSIE_GITHUB_BASE_URL");
+    return (env && *env) ? env : "https://github.com";
+}
+
 char *build_tarball_url(const PackageSpec *spec, RefKind kind) {
     if (!spec) return NULL;
 
+    const char *base = github_base_url();
     const char *kind_segment = (kind == REF_KIND_TAG) ? "tags" : "heads";
-    const char *fmt = "https://github.com/%s/%s/archive/refs/%s/%s.tar.gz";
+    const char *fmt = "%s/%s/%s/archive/refs/%s/%s.tar.gz";
 
-    size_t len = strlen(fmt) + strlen(spec->owner) + strlen(spec->repo)
+    size_t len = strlen(fmt) + strlen(base) + strlen(spec->owner) + strlen(spec->repo)
                  + strlen(kind_segment) + strlen(spec->ref) + 1;
     char *url = spm_malloc(len);
-    snprintf(url, len, fmt, spec->owner, spec->repo, kind_segment, spec->ref);
+    snprintf(url, len, fmt, base, spec->owner, spec->repo, kind_segment, spec->ref);
 
     return url;
 }

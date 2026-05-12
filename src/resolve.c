@@ -7,6 +7,15 @@
 #include <curl/curl.h>
 #endif
 
+// Returns the GitHub base URL (no trailing slash). Defaults to
+// "https://github.com" but can be overridden via the ROSIE_GITHUB_BASE_URL
+// env var. Used by the regression test suite to point rosie at a local
+// mock server.
+static const char *github_base_url(void) {
+    const char *env = getenv("ROSIE_GITHUB_BASE_URL");
+    return (env && *env) ? env : "https://github.com";
+}
+
 // --- in-memory fetch target ---
 
 typedef struct {
@@ -36,8 +45,8 @@ static size_t mem_write_cb(void *contents, size_t size, size_t nmemb, void *user
 static int fetch_refs(const char *owner, const char *repo, MemBuf *out) {
     char url[1024];
     snprintf(url, sizeof(url),
-             "https://github.com/%s/%s/info/refs?service=git-upload-pack",
-             owner, repo);
+             "%s/%s/%s/info/refs?service=git-upload-pack",
+             github_base_url(), owner, repo);
 
     CURL *curl = curl_easy_init();
     if (!curl) return -1;
@@ -84,8 +93,8 @@ extern int wasm_fetch_to_buffer(const char *url, const char *accept_header,
 static int fetch_refs(const char *owner, const char *repo, MemBuf *out) {
     char url[1024];
     snprintf(url, sizeof(url),
-             "https://github.com/%s/%s/info/refs?service=git-upload-pack",
-             owner, repo);
+             "%s/%s/%s/info/refs?service=git-upload-pack",
+             github_base_url(), owner, repo);
 
     out->data = NULL;
     out->size = 0;

@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { silenceWasiExperimentalWarning } from "./silence-wasi-warning.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -47,6 +48,7 @@ interface WasmModule {
 }
 
 async function runWasm(): Promise<void> {
+  silenceWasiExperimentalWarning();
   const wasmEntry = path.join(__dirname, "..", "wasm", "rosie.js");
   let createRosie: () => Promise<WasmModule>;
   try {

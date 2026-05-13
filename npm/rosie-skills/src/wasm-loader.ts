@@ -10,6 +10,7 @@
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { silenceWasiExperimentalWarning } from "./silence-wasi-warning.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +64,7 @@ let modulePromise: Promise<RosieModule> | null = null;
 async function getOrLoadModule(): Promise<RosieModule> {
   if (modulePromise) return modulePromise;
 
+  silenceWasiExperimentalWarning();
   const wasmEntry = path.join(__dirname, "..", "wasm", "rosie.js");
   const mod = (await import(wasmEntry)) as { default: RosieFactory };
   const createRosie = mod.default;

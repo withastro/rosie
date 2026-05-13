@@ -22,16 +22,14 @@ pub struct Skill {
     pub skill_file: PathBuf,
 }
 
-/// Default search paths checked in order, relative to the project root.
-/// Matches `SKILL_SEARCH_PATHS` in skill.c.
-const SKILL_SEARCH_PATHS: &[&str] = &[
-    "skills",
-    ".agents/skills",
-    ".claude/skills",
-    ".cursor/skills",
-    ".cline/skills",
-    ".codex/skills",
-];
+/// Search paths checked in order when looking inside a *package* for the
+/// skills it ships. Intentionally narrow: `skills/` is the convention, and
+/// the recursive fallback below catches anything off-convention. We do not
+/// scan agent-specific directories like `.agents/skills`, `.claude/skills`,
+/// `.cursor/skills`, etc. — those are consumer-side install destinations,
+/// so a project that committed its installed third-party skills would have
+/// them mistakenly republished.
+const SKILL_SEARCH_PATHS: &[&str] = &["skills"];
 
 /// Parse SKILL.md frontmatter. Returns None on read error or when no name
 /// can be derived from frontmatter or the parent directory name.

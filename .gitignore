@@ -31,3 +31,9 @@ target/
 !tests/regression/cases/*/expected/.claude/
 !tests/regression/cases/*/expected/.opencode/
 !tests/regression/cases/*/expected/.cursor/
+# Fixture sources may contain dot-dirs that simulate consumer-side install
+# state (e.g. a project that committed its installed third-party skills).
+!tests/regression/fixtures/sources/**/.agents/
+!tests/regression/fixtures/sources/**/.claude/
+!tests/regression/fixtures/sources/**/.opencode/
+!tests/regression/fixtures/sources/**/.cursor/

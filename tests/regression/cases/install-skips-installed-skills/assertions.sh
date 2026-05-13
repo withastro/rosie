@@ -1,0 +1,5 @@
+assert_exit_code 0 "$(cat exit_code)"
+assert_contains stdout "Found 1 skill(s)"
+assert_contains stdout "genuine"
+assert_not_contains stdout "installed-thirdparty"
+assert_symlink_target ".claude/skills/genuine" "../../.agents/skills/genuine"

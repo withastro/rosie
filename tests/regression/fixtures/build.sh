@@ -70,7 +70,9 @@ find "$SOURCES" -mindepth 3 -maxdepth 3 -type d | while read -r ref_dir; do
 
     # Sanity check: confirm we actually emitted a pax_global_header so
     # future build-script changes can't silently lose this property.
-    first_record=$(zcat "$out_tar" | head -c 100 | tr -d '\0' | head -n 1)
+    # gunzip -c works on both GNU and BSD systems; macOS `zcat` only
+    # handles the old .Z compress format, not gzip.
+    first_record=$(gunzip -c "$out_tar" | head -c 100 | tr -d '\0' | head -n 1)
     if [ "$first_record" != "pax_global_header" ]; then
         echo "error: $out_tar first record is '$first_record', expected 'pax_global_header'" >&2
         echo "       (the GNU tar on this system may not support --format=pax globexthdr)" >&2

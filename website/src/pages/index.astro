@@ -1,6 +1,7 @@
 ---
 import { getEntry, render } from 'astro:content';
 import Layout from '../layouts/Layout.astro';
+import DocsNav from '../components/DocsNav.astro';
 
 const entry = await getEntry('docs', 'index');
 if (!entry) throw new Error('docs/index.md not found');
@@ -8,4 +9,23 @@ const { Content } = await render(entry);
 ---
 <Layout>
   <Content />
+
+  <div class="section-rule" id="docs">
+    <span class="dashes">──</span>
+    <a href="#docs" class="label">docs</a>
+    <span class="dashes-grow"></span>
+  </div>
+
+  <section class="docs-index">
+    <DocsNav open />
+  </section>
+
+  <div class="section-rule">
+    <span class="dashes-grow"></span>
+  </div>
+
+  <footer class="page-footer">
+    <p>rosie · BSD-3 · <a href="https://github.com/matthewp/rosie">github.com/matthewp/rosie</a></p>
+    <p class="cursor"><span class="prompt">$</span><span class="blink"></span></p>
+  </footer>
 </Layout>

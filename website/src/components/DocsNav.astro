@@ -1,0 +1,61 @@
+---
+import { getCollection } from 'astro:content';
+
+interface Props {
+  open?: boolean;
+}
+
+const { open = false } = Astro.props;
+
+const docs = await getCollection('docs');
+const order = ['cli', 'lockfile', 'references', 'agents', 'js-api', 'skill-format', 'discovery', 'how-it-works', 'credits'];
+
+const sortedDocs = docs
+  .filter(d => d.id !== 'index')
+  .sort((a, b) => {
+    const aIdx = order.indexOf(a.id);
+    const bIdx = order.indexOf(b.id);
+    if (aIdx === -1 && bIdx === -1) return a.id.localeCompare(b.id);
+    if (aIdx === -1) return 1;
+    if (bIdx === -1) return -1;
+    return aIdx - bIdx;
+  });
+---
+
+<details class="docs-nav" open={open}>
+  <summary>
+    <span class="prompt">$</span> ls docs/
+  </summary>
+  <div class="ls-output">
+    {sortedDocs.map(doc => (
+      <a href={`/docs/${doc.id}/`}>{doc.id}/</a>
+    ))}
+  </div>
+</details>
+
+<style>
+  .docs-nav {
+    margin: 0 0 1rem;
+  }
+  .docs-nav summary {
+    display: block;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    font-size: .95rem;
+    color: var(--fg);
+  }
+  .docs-nav summary::-webkit-details-marker { display: none; }
+  .docs-nav summary::marker { content: ''; }
+  .docs-nav[open] summary { margin-bottom: .25rem; }
+  .ls-output {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem 1.5rem;
+    margin: .25rem 0 0;
+    padding-left: 1.5rem;
+  }
+  .ls-output a {
+    color: var(--teal);
+  }
+</style>

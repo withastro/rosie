@@ -1,12 +1,14 @@
 ---
-// Site shell: doctype, head, terminal chrome around the page content.
+const { path = 'main' } = Astro.props;
+const isMain = path === 'main';
+const browserTitle = isMain ? 'rosie — a robot helper for agent skills' : `rosie — ${path}`;
 ---
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>rosie — a robot helper for agent skills</title>
+  <title>{browserTitle}</title>
   <meta name="description" content="A fast, cross-platform package manager for AI agent skills. Think npm, but for skills." />
   <meta property="og:title" content="rosie — a robot helper for agent skills" />
   <meta property="og:description" content="A fast, cross-platform package manager for AI agent skills." />
@@ -24,7 +26,7 @@
         <span class="dot dot-yellow"></span>
         <span class="dot dot-green"></span>
       </div>
-      <div class="title">matthewp/rosie — main</div>
+      <div class="title">matthewp/rosie — {path}</div>
       <div class="titlebar-spacer" aria-hidden="true"></div>
     </header>
 

@@ -1,0 +1,20 @@
+---
+import { getCollection, render } from 'astro:content';
+import DocsNav from '../../components/DocsNav.astro';
+import Layout from '../../layouts/Layout.astro';
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs');
+  return docs
+    .filter(d => d.id !== 'index')
+    .map(d => ({ params: { slug: d.id }, props: { entry: d } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const path = `docs/${entry.id}`;
+---
+<Layout path={path}>
+  <DocsNav />
+  <Content />
+</Layout>

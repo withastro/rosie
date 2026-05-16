@@ -21,6 +21,7 @@ tar = "0.4"
 flate2 = "1.0"
 time = { version = "0.3", features = ["formatting"] }
 lexopt = "0.3"
+similar = { version = "2", default-features = false, features = ["text"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # rustls TLS keeps the binary self-contained on macOS/freebsd without

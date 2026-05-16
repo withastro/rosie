@@ -1,1 +1,3 @@
-../../../node_modules/react/README.md
+# React
+
+A JavaScript library for building user interfaces.

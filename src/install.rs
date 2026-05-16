@@ -7,6 +7,7 @@
 use crate::agent::{self, Agent};
 use crate::agentsmd;
 use crate::archive;
+use crate::audit::{self, AuditChange, AuditKind, Operation};
 use crate::download::{
     self, source_is_local, source_is_npm, source_local_path, source_npm_split, PackageSpec,
 };
@@ -15,6 +16,7 @@ use crate::lockfile::{self, LockKind, Lockfile};
 use crate::npm;
 use crate::os;
 use crate::resolve::{self, ResolvedRef};
+use crate::sanitize::{self, SanitizeOpts};
 use crate::skill::{self, Skill};
 use crate::util;
 use std::io::Write;
@@ -29,7 +31,7 @@ pub const LOCAL_REFERENCES_DIR: &str = ".agents/references";
 // Options structs — mirror InstallOptions / RemoveOptions in install.h.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub spec: Option<String>,
     pub skill_name: Option<String>,
@@ -44,6 +46,51 @@ pub struct InstallOptions {
     pub is_npm: bool,
     pub include_paths: Vec<String>,
     pub skip_lockfile: bool,
+    pub strip_comments: bool,
+    pub strip_invisible: bool,
+    pub retag_detect: bool,
+    pub force_audit: bool,
+    pub suppress_audit: bool,
+}
+
+impl Default for InstallOptions {
+    fn default() -> Self {
+        Self {
+            spec: None,
+            skill_name: None,
+            agent_names: Vec::new(),
+            global: false,
+            yes: false,
+            list_only: false,
+            override_pinned: false,
+            pinned: false,
+            is_reference: false,
+            name_override: None,
+            is_npm: false,
+            include_paths: Vec::new(),
+            skip_lockfile: false,
+            strip_comments: true,
+            strip_invisible: true,
+            retag_detect: true,
+            force_audit: false,
+            suppress_audit: false,
+        }
+    }
+}
+
+impl InstallOptions {
+    pub fn sanitize_opts_reference(&self) -> SanitizeOpts {
+        SanitizeOpts {
+            strip_comments: self.strip_comments,
+            strip_invisible: self.strip_invisible,
+        }
+    }
+    pub fn sanitize_opts_skill(&self) -> SanitizeOpts {
+        SanitizeOpts {
+            strip_comments: false,
+            strip_invisible: self.strip_invisible,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -101,7 +148,7 @@ fn ask_yes_no_default_no(prompt: &str) -> bool {
 // Public: install_skill_to_agent — global install (copy to ~/.<agent>/skills)
 // ---------------------------------------------------------------------------
 
-pub fn install_skill_to_agent(skill: &Skill, agent: &Agent) -> i32 {
+pub fn install_skill_to_agent(skill: &Skill, agent: &Agent, opts: &InstallOptions) -> i32 {
     let target_dir = agent.install_path.join(&skill.name);
     crate::log::debug(&format!(
         "Installing {} to {}",
@@ -114,6 +161,10 @@ pub fn install_skill_to_agent(skill: &Skill, agent: &Agent) -> i32 {
     }
     if let Err(e) = os::copy_dir_recursive(&skill.path, &target_dir) {
         crate::log::error(&format!("Failed to copy skill: {} ({e})", skill.name));
+        return -1;
+    }
+    if let Err(e) = sanitize::sanitize_skill_dir(&target_dir, opts.sanitize_opts_skill()) {
+        crate::log::error(&format!("Failed to sanitize skill: {} ({e})", skill.name));
         return -1;
     }
     0
@@ -153,7 +204,7 @@ fn install_skill_local(skill_name: &str, agent: &Agent, canonical_path: &Path) -
     rosie_create_link(&relative_target, &link_path, true)
 }
 
-fn install_to_canonical(skill: &Skill) -> Option<PathBuf> {
+fn install_to_canonical(skill: &Skill, opts: &InstallOptions) -> Option<PathBuf> {
     let canonical_dir = PathBuf::from(LOCAL_SKILLS_DIR).join(&skill.name);
     crate::log::debug(&format!(
         "Installing to canonical path: {}",
@@ -165,6 +216,10 @@ fn install_to_canonical(skill: &Skill) -> Option<PathBuf> {
     }
     if let Err(e) = os::copy_dir_recursive(&skill.path, &canonical_dir) {
         crate::log::error(&format!("Failed to copy skill: {} ({e})", skill.name));
+        return None;
+    }
+    if let Err(e) = sanitize::sanitize_skill_dir(&canonical_dir, opts.sanitize_opts_skill()) {
+        crate::log::error(&format!("Failed to sanitize skill: {} ({e})", skill.name));
         return None;
     }
     Some(canonical_dir)
@@ -355,26 +410,67 @@ fn find_readme_in_tree(root: &Path) -> Option<PathBuf> {
     None
 }
 
-fn npm_symlink_target(pkg: &str, rel_path: &str) -> String {
-    format!("../../../node_modules/{pkg}/{rel_path}")
-}
-
-/// Symlink .agents/references/<name>/REFERENCE.md back into node_modules.
-fn npm_install_one(name: &str, pkg: &str, rel_path: &str) -> i32 {
+/// Copy node_modules/<pkg>/<rel_path> into .agents/references/<name>/REFERENCE.md,
+/// applying sanitize_reference on the way. Previously symlinked, but we now
+/// own the content so the strip pass can run and so updates are explicit
+/// (lockfile-tracked) rather than tracking `npm install` silently.
+fn npm_install_one(name: &str, pkg: &str, rel_path: &str, opts: &InstallOptions) -> i32 {
     let ref_dir = PathBuf::from(LOCAL_REFERENCES_DIR).join(name);
     if let Err(e) = os::create_dir_all(&ref_dir) {
         crate::log::error(&format!("Cannot create directory: {} ({e})", ref_dir.display()));
         return -1;
     }
-    let link_path = ref_dir.join("REFERENCE.md");
-    let target = npm_symlink_target(pkg, rel_path);
-    if let Ok(m) = os::symlink_metadata(&link_path) {
+    let ref_file = ref_dir.join("REFERENCE.md");
+    let src = PathBuf::from("node_modules").join(pkg).join(rel_path);
+
+    // Read prior content (if any) before we overwrite, so the audit can show
+    // a unified diff for updates.
+    let prior = match os::symlink_metadata(&ref_file) {
+        Ok(m) if matches!(m.kind, os::FileKind::File) => os::read_to_string(&ref_file).ok(),
+        // Symlinks were left over from the pre-copy era. Treat as no prior.
+        _ => None,
+    };
+
+    // Remove any prior install (symlink from an older rosie or a stale copy).
+    if let Ok(m) = os::symlink_metadata(&ref_file) {
         if matches!(m.kind, os::FileKind::Symlink | os::FileKind::File) {
-            let _ = os::remove_file(&link_path);
+            let _ = os::remove_file(&ref_file);
         }
     }
-    crate::log::debug(&format!("Symlink: {} -> {target}", link_path.display()));
-    rosie_create_link(Path::new(&target), &link_path, false)
+    let body = match os::read_to_string(&src) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::log::error(&format!("Cannot read {}: {e}", src.display()));
+            return -1;
+        }
+    };
+    let body = sanitize::sanitize_reference(&body, opts.sanitize_opts_reference());
+    let rc = write_string_to_file(&ref_file, &body);
+    if rc != 0 {
+        return rc;
+    }
+
+    let operation = if prior.is_some() {
+        Operation::Update
+    } else {
+        Operation::Install
+    };
+    let (content_field, diff_field) = match (prior.as_deref(), operation) {
+        (Some(old), Operation::Update) => (None, Some(audit::unified_diff(name, old, &body))),
+        _ => (Some(body.clone()), None),
+    };
+    audit::push_change(AuditChange {
+        name: name.to_string(),
+        kind: AuditKind::Reference,
+        source: npm_lock_source(pkg, rel_path),
+        ref_name: String::new(),
+        sha: String::new(),
+        operation,
+        content: content_field,
+        diff: diff_field,
+    });
+
+    0
 }
 
 fn npm_lock_source(pkg: &str, rel_path: &str) -> String {
@@ -431,7 +527,7 @@ fn install_npm_references(opts: &InstallOptions) -> i32 {
 
     for rel in &files {
         let name = npm::ref_name(pkg, rel);
-        if npm_install_one(&name, pkg, rel) != 0 {
+        if npm_install_one(&name, pkg, rel, opts) != 0 {
             continue;
         }
         if let Some(lf) = lf.as_mut() {
@@ -522,11 +618,42 @@ fn install_reference_from_extracted(
         }
     };
 
+    let body = sanitize::sanitize_reference(&body, opts.sanitize_opts_reference());
+
     let ref_dir = PathBuf::from(LOCAL_REFERENCES_DIR).join(&name);
     let ref_file = ref_dir.join("REFERENCE.md");
+
+    let prior = os::read_to_string(&ref_file).ok();
+    let operation = if prior.is_some() {
+        Operation::Update
+    } else {
+        Operation::Install
+    };
+
     if write_string_to_file(&ref_file, &body) != 0 {
         return -1;
     }
+
+    let owner_audit = spec.owner.as_deref().unwrap_or("");
+    let repo_audit = spec.repo.as_deref().unwrap_or("");
+    let source_audit = match skill_name {
+        Some(s) => format!("{owner_audit}/{repo_audit}#{s}"),
+        None => format!("{owner_audit}/{repo_audit}"),
+    };
+    let (content_field, diff_field) = match (prior.as_deref(), operation) {
+        (Some(old), Operation::Update) => (None, Some(audit::unified_diff(&name, old, &body))),
+        _ => (Some(body.clone()), None),
+    };
+    audit::push_change(AuditChange {
+        name: name.clone(),
+        kind: AuditKind::Reference,
+        source: source_audit,
+        ref_name: spec.ref_.clone().unwrap_or_default(),
+        sha: resolved.map(|r| r.sha.clone()).unwrap_or_default(),
+        operation,
+        content: content_field,
+        diff: diff_field,
+    });
     crate::log::info(&format!("  {}", ref_file.display()));
     crate::report::push(crate::report::InstallReport {
         skill_name: name.clone(),
@@ -730,12 +857,16 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
     let repo = spec.repo.as_deref().unwrap_or("");
     let source = format!("{owner}/{repo}");
 
+    let ref_name_audit = spec.ref_.clone().unwrap_or_default();
+    let sha_audit = resolved.as_ref().map(|r| r.sha.clone()).unwrap_or_default();
+
     if opts.global {
         for s in &skills {
+            let new_skill_md = os::read_to_string(&s.skill_file).unwrap_or_default();
             let mut ok_agents = Vec::new();
             let mut fail_agents = Vec::new();
             for a in &agents {
-                if install_skill_to_agent(s, a) == 0 {
+                if install_skill_to_agent(s, a, opts) == 0 {
                     installed += 1;
                     ok_agents.push(a.def.name.to_string());
                 } else {
@@ -747,6 +878,19 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
                 kind: crate::report::ReportKind::Skill,
                 installed_agents: ok_agents,
                 failed_agents: fail_agents,
+            });
+            audit::push_change(AuditChange {
+                name: s.name.clone(),
+                kind: AuditKind::Skill,
+                source: source.clone(),
+                ref_name: ref_name_audit.clone(),
+                sha: sha_audit.clone(),
+                operation: Operation::Install,
+                content: Some(sanitize::sanitize_skill(
+                    &new_skill_md,
+                    opts.sanitize_opts_skill(),
+                )),
+                diff: None,
             });
         }
         crate::log::info(&format!(
@@ -771,7 +915,14 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
         };
 
         for s in &skills {
-            let canonical = match install_to_canonical(s) {
+            // Read existing canonical SKILL.md (if any) before overwriting,
+            // so the audit can show what changed.
+            let canonical_skill_md = PathBuf::from(LOCAL_SKILLS_DIR)
+                .join(&s.name)
+                .join("SKILL.md");
+            let prior_skill = os::read_to_string(&canonical_skill_md).ok();
+
+            let canonical = match install_to_canonical(s, opts) {
                 Some(p) => p,
                 None => continue,
             };
@@ -793,6 +944,30 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
                 installed_agents: ok_agents,
                 failed_agents: fail_agents,
             });
+
+            let new_skill_md = os::read_to_string(&canonical.join("SKILL.md")).unwrap_or_default();
+            let operation = if prior_skill.is_some() {
+                Operation::Update
+            } else {
+                Operation::Install
+            };
+            let (content_field, diff_field) = match (prior_skill.as_deref(), operation) {
+                (Some(old), Operation::Update) => {
+                    (None, Some(audit::unified_diff(&s.name, old, &new_skill_md)))
+                }
+                _ => (Some(new_skill_md), None),
+            };
+            audit::push_change(AuditChange {
+                name: s.name.clone(),
+                kind: AuditKind::Skill,
+                source: source.clone(),
+                ref_name: ref_name_audit.clone(),
+                sha: sha_audit.clone(),
+                operation,
+                content: content_field,
+                diff: diff_field,
+            });
+
             if let Some(lf) = lf.as_mut() {
                 let sha = resolved
                     .as_ref()
@@ -1013,7 +1188,7 @@ pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
                 ));
                 continue;
             }
-            if npm_install_one(&e.skill_name, &pkg, &file_rel) == 0 {
+            if npm_install_one(&e.skill_name, &pkg, &file_rel, base_opts) == 0 {
                 ok += 1;
                 fresh += 1;
             } else {
@@ -1180,6 +1355,7 @@ fn update_npm_package(
     advanced: &mut i32,
     unchanged: &mut i32,
     failed: &mut i32,
+    opts: &InstallOptions,
 ) {
     let pkg_root = PathBuf::from("node_modules").join(pkg);
     if !os::is_dir(&pkg_root) {
@@ -1257,7 +1433,7 @@ fn update_npm_package(
             None => (false, false),
         };
 
-        let _ = npm_install_one(&name, pkg, rel);
+        let _ = npm_install_one(&name, pkg, rel, opts);
         lf.upsert(&name, &source, "-", &version, &now, false, LockKind::Ref);
 
         if !was_present {
@@ -1331,6 +1507,7 @@ pub fn update_skills(base_opts: &InstallOptions, only_skill: Option<&str>) -> i3
                 &mut advanced,
                 &mut unchanged,
                 &mut failed,
+                base_opts,
             );
             seen.push(pkg);
             matched += 1;
@@ -1393,6 +1570,23 @@ pub fn update_skills(base_opts: &InstallOptions, only_skill: Option<&str>) -> i3
 
         let ref_changed = r.ref_ != e.ref_;
         let sha_changed = r.sha != e.sha;
+
+        // Re-tag detection: a pinned tag's SHA is supposed to be immutable.
+        // If the resolved SHA differs from the lockfile's recorded SHA AND
+        // the ref name didn't change, the publisher rewrote the tag —
+        // a common supply-chain attack vector. Flag it in the audit; the
+        // update proceeds (the user may have legitimately accepted a security
+        // re-tag of their own).
+        if base_opts.retag_detect && r.is_tag && sha_changed && !ref_changed && e.sha != "-" {
+            audit::push_finding(crate::audit::AuditFinding {
+                severity: "high".into(),
+                kind: "tag_rewritten".into(),
+                skill: e.skill_name.clone(),
+                ref_name: e.ref_.clone(),
+                old_sha: e.sha.clone(),
+                new_sha: r.sha.clone(),
+            });
+        }
 
         if !ref_changed && !sha_changed {
             crate::log::info(&format!("{}: up to date ({})", e.skill_name, e.ref_));

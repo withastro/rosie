@@ -402,6 +402,37 @@ async function createRosie(opts = {}) {
         }
     };
 
+    // Agent-context detection. Mirrors the native env-var heuristic in
+    // src/os/native.rs::is_agent_context() (which itself mirrors
+    // @vercel/detect-agent). JS callers can additionally set
+    // Module.__rosieAgentContext__ for callers that have already determined
+    // context via another mechanism (e.g. a --audit override).
+    envImports.rosie_is_agent_context_extern = () => {
+        const v = process.env.ROSIE_AGENT_CONTEXT;
+        if (v === '0' || (typeof v === 'string' && v.toLowerCase() === 'false')) {
+            return 0;
+        }
+        if (v && v.length > 0) {
+            return 1;
+        }
+        const known = [
+            'AI_AGENT',
+            'CLAUDECODE', 'CLAUDE_CODE', 'CLAUDE_CODE_SSE_PORT',
+            'CURSOR_TRACE_ID', 'CURSOR_AGENT', 'CURSOR_EXTENSION_HOST_ROLE',
+            'GEMINI_CLI',
+            'CODEX_SANDBOX', 'CODEX_CI', 'CODEX_THREAD_ID',
+            'OPENCODE_CLIENT',
+            'ANTIGRAVITY_AGENT',
+            'AUGMENT_AGENT',
+            'REPL_ID',
+            'COPILOT_MODEL', 'COPILOT_ALLOW_ALL', 'COPILOT_GITHUB_TOKEN',
+        ];
+        for (const k of known) {
+            if (process.env[k]) return 1;
+        }
+        return Module.__rosieAgentContext__ ? 1 : 0;
+    };
+
     // ---- Log bridge (sync) ----
     // The Rust side stores a callback that calls dispatch_log_to_js whenever
     // log::info/error/debug fires. We route through Module.__rosieLog__ so

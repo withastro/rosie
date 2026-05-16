@@ -171,6 +171,7 @@ fn envelope_err_from_last(default: &str) -> *mut c_char {
 fn install_result_json() -> String {
     let reports = rosie::report::drain();
     let instruction_file = rosie::report::take_instruction_file();
+    let audit = rosie::audit::drain();
 
     let mut all_ok: Vec<String> = Vec::new();
     let mut all_fail: Vec<String> = Vec::new();
@@ -212,6 +213,8 @@ fn install_result_json() -> String {
         Some(s) => buf.push_string(&s),
         None => buf.push_null(),
     }
+    buf.push_str(",\"audit\":");
+    buf.push_str(&rosie::audit::to_json(&audit));
     buf.push_char('}');
     buf.0
 }
@@ -245,6 +248,15 @@ fn split_csv(s: Option<&str>, sep: char) -> Vec<String> {
         Some(s) if !s.is_empty() => s.split(sep).map(String::from).collect(),
         _ => Vec::new(),
     }
+}
+
+/// Tristate flag: -1 means "use the rust-side default" (leaves `field`
+/// untouched), 0 means false, anything else means true.
+fn apply_tristate(field: &mut bool, value: i32) {
+    if value < 0 {
+        return;
+    }
+    *field = value != 0;
 }
 
 // ---- Public exports -----------------------------------------------------
@@ -324,7 +336,11 @@ pub extern "C" fn rosie_api_agents() -> *mut c_char {
 
 /// Argument list (all C strings):
 ///   spec, skill_name, agent_names_csv, name_override, include_paths_nl
-/// Followed by 4 ints: is_reference, is_npm, global, skip_lockfile.
+/// Followed by ints: is_reference, is_npm, global, skip_lockfile,
+/// strip_comments, strip_invisible, retag_detect, force_audit, suppress_audit.
+///
+/// Each new int is `-1` for "use default", `0` for explicit off, `1` for
+/// explicit on — preserves backward compat with callers that don't pass them.
 ///
 /// The CSV split uses ',' for agent_names_csv and '\n' for include_paths_nl.
 /// Both forms accept NULL/empty to mean "no override". yes=true is implied
@@ -340,11 +356,18 @@ pub unsafe extern "C" fn rosie_api_install(
     is_npm: i32,
     global: i32,
     skip_lockfile: i32,
+    strip_comments: i32,
+    strip_invisible: i32,
+    retag_detect: i32,
+    force_audit: i32,
+    suppress_audit: i32,
 ) -> *mut c_char {
     rosie::log::clear_last_error();
     rosie::report::clear();
+    rosie::audit::clear();
+    rosie::audit::set_command(rosie::audit::Operation::Install);
 
-    let opts = InstallOptions {
+    let mut opts = InstallOptions {
         spec: cstr_to_owned(spec).filter(|s| !s.is_empty()),
         skill_name: cstr_to_owned(skill_name).filter(|s| !s.is_empty()),
         agent_names: split_csv(cstr_to_str(agent_names_csv), ','),
@@ -358,7 +381,16 @@ pub unsafe extern "C" fn rosie_api_install(
         skip_lockfile: skip_lockfile != 0,
         override_pinned: false,
         pinned: false,
+        ..InstallOptions::default()
     };
+    apply_tristate(&mut opts.strip_comments, strip_comments);
+    apply_tristate(&mut opts.strip_invisible, strip_invisible);
+    apply_tristate(&mut opts.retag_detect, retag_detect);
+    apply_tristate(&mut opts.force_audit, force_audit);
+    apply_tristate(&mut opts.suppress_audit, suppress_audit);
+    if opts.force_audit && opts.suppress_audit {
+        return envelope_err("--audit and --no-audit are mutually exclusive");
+    }
 
     let rc = if opts.spec.is_none() {
         install::install_from_lockfile(&opts)
@@ -403,13 +435,28 @@ pub unsafe extern "C" fn rosie_api_remove(
 pub unsafe extern "C" fn rosie_api_update(
     only_skill: *const c_char,
     skip_lockfile: i32,
+    strip_comments: i32,
+    strip_invisible: i32,
+    retag_detect: i32,
+    force_audit: i32,
+    suppress_audit: i32,
 ) -> *mut c_char {
     rosie::log::clear_last_error();
     rosie::report::clear();
+    rosie::audit::clear();
+    rosie::audit::set_command(rosie::audit::Operation::Update);
     let mut opts = InstallOptions::default();
     opts.yes = true;
     opts.global = false;
     opts.skip_lockfile = skip_lockfile != 0;
+    apply_tristate(&mut opts.strip_comments, strip_comments);
+    apply_tristate(&mut opts.strip_invisible, strip_invisible);
+    apply_tristate(&mut opts.retag_detect, retag_detect);
+    apply_tristate(&mut opts.force_audit, force_audit);
+    apply_tristate(&mut opts.suppress_audit, suppress_audit);
+    if opts.force_audit && opts.suppress_audit {
+        return envelope_err("--audit and --no-audit are mutually exclusive");
+    }
     let target = cstr_to_owned(only_skill).filter(|s| !s.is_empty());
     let rc = install::update_skills(&opts, target.as_deref());
     if rc != 0 {

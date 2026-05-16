@@ -2,11 +2,11 @@ assert_exit_code 0 "$(cat exit_code)"
 assert_contains stdout "npm references for react@18.0.0"
 assert_contains stdout "Installed 2 npm reference"
 
-# REFERENCE.md files must be SYMLINKS back into node_modules, not copies.
-assert_symlink_target ".agents/references/react-readme/REFERENCE.md" \
-    "../../../node_modules/react/README.md"
-assert_symlink_target ".agents/references/react-docs-hooks/REFERENCE.md" \
-    "../../../node_modules/react/docs/hooks.md"
+# REFERENCE.md files are copies (not symlinks) so rosie can sanitize them
+# on install and so upstream changes land via `rosie update`, not silently
+# via the next `npm install`. See docs/security.
+assert_regular_file ".agents/references/react-readme/REFERENCE.md"
+assert_regular_file ".agents/references/react-docs-hooks/REFERENCE.md"
 
 # Lockfile source must use the npm:<pkg>#<rel-path> form and record the
 # package version in the sha column.

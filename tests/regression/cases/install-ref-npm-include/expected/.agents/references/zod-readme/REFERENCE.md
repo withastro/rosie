@@ -1,1 +1,3 @@
-../../../node_modules/zod/README.md
+# Zod
+
+TypeScript-first schema validation.

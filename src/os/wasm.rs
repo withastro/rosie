@@ -111,6 +111,7 @@ extern "C" {
     ) -> i32;
     fn rosie_current_dir(out_buf_ptr: *mut *mut u8, out_len: *mut usize) -> i32;
     fn rosie_set_current_dir(path_ptr: *const u8, path_len: usize) -> i32;
+    fn rosie_is_agent_context_extern() -> i32;
 }
 
 fn path_bytes(path: &Path) -> Vec<u8> {
@@ -431,6 +432,13 @@ pub fn getenv(name: &str) -> Option<String> {
 
 pub fn now_unix_seconds() -> i64 {
     unsafe { rosie_now_unix_seconds() }
+}
+
+/// Whether rosie is running inside an AI-agent session. Native uses an
+/// env-var heuristic; wasm asks the shim, which uses the JS-side am-i-vibing
+/// library and applies the same ROSIE_AGENT_CONTEXT escape hatch.
+pub fn is_agent_context() -> bool {
+    unsafe { rosie_is_agent_context_extern() != 0 }
 }
 
 pub fn current_dir() -> Result<PathBuf> {

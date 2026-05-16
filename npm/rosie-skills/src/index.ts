@@ -80,6 +80,62 @@ export type InstalledInstruction =
   | null;
 
 /**
+ * Severity tier for an `AuditFinding`. `"high"` is rosie raising an explicit
+ * supply-chain warning (e.g. a `tag_rewritten` event). Future versions may
+ * introduce additional levels.
+ */
+export type AuditSeverity = "high";
+
+/**
+ * A finding rosie itself raised during the operation, independent of any
+ * change record. The canonical example is `tag_rewritten`: a pinned tag's
+ * resolved SHA changed between install and update, which usually indicates
+ * the publisher rewrote the tag (a supply-chain attack vector).
+ */
+export interface AuditFinding {
+  severity: AuditSeverity;
+  /** Stable identifier of the finding type. Currently `"tag_rewritten"` only. */
+  kind: "tag_rewritten" | string;
+  /** Skill or reference the finding applies to. */
+  skill: string;
+  /** Ref name (tag or branch) at the time of the finding. */
+  ref: string;
+  oldSha: string;
+  newSha: string;
+}
+
+/**
+ * Description of a single skill or reference rosie installed or updated.
+ * For first installs, `content` carries the full sanitized body. For
+ * updates against existing on-disk content, `diff` carries a unified diff.
+ */
+export interface AuditChange {
+  name: string;
+  kind: "skill" | "reference";
+  source: string;
+  ref: string;
+  sha: string;
+  operation: "install" | "update";
+  /** Full sanitized body. Populated for first-time installs only. */
+  content: string | null;
+  /** Unified diff against the prior on-disk content. Populated for updates only. */
+  diff: string | null;
+}
+
+/**
+ * Structured record of everything an `install` / `update` did, plus any
+ * findings rosie raised. When running inside an AI-agent context the CLI
+ * also writes a formatted version of this to stdout so the agent can
+ * review it before continuing. See docs/security.
+ */
+export interface Audit {
+  schemaVersion: 1;
+  command: "install" | "update";
+  findings: AuditFinding[];
+  changes: AuditChange[];
+}
+
+/**
  * Returned by `install`, `installFromLockfile`, and `update`. `skills` is
  * per-skill detail; `installedAgents` / `failedAgents` are deduped unions
  * across every skill in the call.
@@ -96,6 +152,11 @@ export interface InstallResult {
    * during this call. See `InstalledInstruction`.
    */
   installedInstruction: InstalledInstruction;
+  /**
+   * Structured audit of every change rosie made + findings it raised. Always
+   * present on results from `install` / `update`. See `Audit` for the shape.
+   */
+  audit: Audit;
 }
 
 export interface BaseOptions {
@@ -113,7 +174,45 @@ export interface BaseOptions {
   onLog?: OnLog;
 }
 
-export interface InstallOptions extends BaseOptions {
+/**
+ * Defenses applied to installed content. All default to `true`; pass `false`
+ * to opt out. See docs/security for the threat model and exact rules.
+ */
+export interface SecurityOptions {
+  /**
+   * Strip HTML and link-form markdown comments from reference content
+   * (outside fenced code blocks). Default `true`. Skills are not affected.
+   * Mirrors CLI `--no-strip-comments`.
+   */
+  stripComments?: boolean;
+  /**
+   * Strip invisible Unicode (zero-width, bidi overrides, Unicode Tag block)
+   * from both reference and skill content. Default `true`. Mirrors CLI
+   * `--no-strip-invisible`.
+   */
+  stripInvisible?: boolean;
+  /**
+   * On `update`, flag pinned tags whose SHA changed since install as a
+   * `tag_rewritten` finding in the audit. Default `true`. Mirrors CLI
+   * `--no-retag-detect`.
+   */
+  retagDetect?: boolean;
+  /**
+   * Force emission of the wrapped audit text on stdout even when no agent
+   * context is detected. The `audit` field on the result is unaffected.
+   * Mutually exclusive with `suppressAudit`. Mirrors CLI `--audit`.
+   */
+  forceAudit?: boolean;
+  /**
+   * Suppress emission of the wrapped audit text on stdout even when an
+   * agent context is detected. The `audit` field on the result is
+   * unaffected. Mutually exclusive with `forceAudit`. Mirrors CLI
+   * `--no-audit`.
+   */
+  suppressAudit?: boolean;
+}
+
+export interface InstallOptions extends BaseOptions, SecurityOptions {
   /** Install as a reference (under `.agents/references/`) instead of a skill. Mirrors `--ref`. */
   ref?: boolean;
   /** For `--ref`: install a specific SKILL.md as the reference. */
@@ -144,7 +243,7 @@ export interface RemoveOptions extends BaseOptions {
   lockfile?: boolean;
 }
 
-export interface UpdateOptions extends BaseOptions {
+export interface UpdateOptions extends BaseOptions, SecurityOptions {
   /** When `false`, don't write changes back to `.agents/rosie.lock`. Mirrors `--no-lockfile`. */
   lockfile?: boolean;
 }
@@ -180,6 +279,9 @@ export async function agents(opts: BaseOptions = {}): Promise<Agent[]> {
  * `.agents/rosie.lock` (matches the CLI's `rosie install` with no args).
  */
 export async function install(spec: string, opts: InstallOptions = {}): Promise<InstallResult> {
+  if (opts.forceAudit && opts.suppressAudit) {
+    throw new Error("rosie-skills: forceAudit and suppressAudit are mutually exclusive");
+  }
   return withCwd(opts.cwd, async () => {
     const mod = await loadModule(opts.onLog);
     const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
@@ -195,8 +297,20 @@ export async function install(spec: string, opts: InstallOptions = {}): Promise<
       opts.npm ? 1 : 0,
       opts.global ? 1 : 0,
       skipLockfile,
+      tristate(opts.stripComments),
+      tristate(opts.stripInvisible),
+      tristate(opts.retagDetect),
+      tristate(opts.forceAudit),
+      tristate(opts.suppressAudit),
     ]);
   });
+}
+
+/** Map an optional boolean to the wasm tristate convention: undefined → -1
+ *  (use rust default), true → 1, false → 0. */
+function tristate(v: boolean | undefined): number {
+  if (v === undefined) return -1;
+  return v ? 1 : 0;
 }
 
 /** Reinstall everything from `.agents/rosie.lock`. */
@@ -224,12 +338,20 @@ export async function remove(skillName: string, opts: RemoveOptions = {}): Promi
  * entry that was re-resolved (including those that ended up unchanged).
  */
 export async function update(skillName?: string, opts: UpdateOptions = {}): Promise<InstallResult> {
+  if (opts.forceAudit && opts.suppressAudit) {
+    throw new Error("rosie-skills: forceAudit and suppressAudit are mutually exclusive");
+  }
   return withCwd(opts.cwd, async () => {
     const mod = await loadModule(opts.onLog);
     const skipLockfile = opts.lockfile === false ? 1 : 0;
     return await callApi<InstallResult>(mod, "rosie_api_update", [
       skillName ?? "",
       skipLockfile,
+      tristate(opts.stripComments),
+      tristate(opts.stripInvisible),
+      tristate(opts.retagDetect),
+      tristate(opts.forceAudit),
+      tristate(opts.suppressAudit),
     ]);
   });
 }

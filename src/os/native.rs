@@ -253,6 +253,70 @@ pub fn getenv(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
+/// Best-effort detection of whether rosie is running inside an AI-agent
+/// session. Env-var heuristic only; process-tree inspection is deferred.
+/// The audit log is emitted on stdout when this returns true. The detection
+/// is intentionally generous — false positives just produce a longer
+/// stdout, false negatives lose the security signal, so we err toward
+/// emitting.
+///
+/// The agent list mirrors `@vercel/detect-agent`: Claude Code, Cursor +
+/// Cursor CLI, Gemini CLI, Codex, OpenCode, Antigravity, Augment, Replit,
+/// GitHub Copilot, plus the universal `AI_AGENT` signal any tool can set.
+///
+/// Escape hatches: `ROSIE_AGENT_CONTEXT=1` forces on (tests, unknown
+/// agents); `ROSIE_AGENT_CONTEXT=0` forces off.
+pub fn is_agent_context() -> bool {
+    if let Some(v) = std::env::var("ROSIE_AGENT_CONTEXT").ok() {
+        if v == "0" || v.eq_ignore_ascii_case("false") {
+            return false;
+        }
+        if !v.is_empty() {
+            return true;
+        }
+    }
+    AGENT_ENV_VARS.iter().any(|k| nonempty(k))
+}
+
+/// The list of env vars that signal an AI-agent context. Mirrors
+/// `@vercel/detect-agent` (Apache-2.0). Order doesn't matter — any match
+/// is sufficient. Kept in this module so wasm/shim.js can import the same
+/// list via the build (kept in sync manually for now).
+pub(crate) const AGENT_ENV_VARS: &[&str] = &[
+    // Universal — any agent can set this.
+    "AI_AGENT",
+    // Claude Code
+    "CLAUDECODE",
+    "CLAUDE_CODE",
+    "CLAUDE_CODE_SSE_PORT",
+    // Cursor + Cursor CLI
+    "CURSOR_TRACE_ID",
+    "CURSOR_AGENT",
+    "CURSOR_EXTENSION_HOST_ROLE",
+    // Gemini CLI
+    "GEMINI_CLI",
+    // Codex
+    "CODEX_SANDBOX",
+    "CODEX_CI",
+    "CODEX_THREAD_ID",
+    // OpenCode
+    "OPENCODE_CLIENT",
+    // Antigravity
+    "ANTIGRAVITY_AGENT",
+    // Augment CLI
+    "AUGMENT_AGENT",
+    // Replit
+    "REPL_ID",
+    // GitHub Copilot
+    "COPILOT_MODEL",
+    "COPILOT_ALLOW_ALL",
+    "COPILOT_GITHUB_TOKEN",
+];
+
+fn nonempty(name: &str) -> bool {
+    std::env::var(name).map(|v| !v.is_empty()).unwrap_or(false)
+}
+
 pub fn now_unix_seconds() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

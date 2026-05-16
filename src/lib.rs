@@ -17,6 +17,7 @@
 
 pub mod os;
 
+pub mod audit;
 pub mod log;
 pub mod report;
 pub mod util;
@@ -32,6 +33,7 @@ pub mod link;
 pub mod lockfile;
 pub mod npm;
 pub mod resolve;
+pub mod sanitize;
 pub mod skill;
 
 pub const ROSIE_VERSION: &str = env!("CARGO_PKG_VERSION");

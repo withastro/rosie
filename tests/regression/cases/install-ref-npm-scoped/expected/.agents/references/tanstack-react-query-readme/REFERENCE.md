@@ -1,1 +1,3 @@
-../../../node_modules/@tanstack/react-query/README.md
+# TanStack Query
+
+Powerful asynchronous state management.

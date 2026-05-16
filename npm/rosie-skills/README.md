@@ -55,6 +55,28 @@ interface InstallResult {
     | "GEMINI.md"
     | ".github/copilot-instructions.md"
     | null;                         // null for pure-skill installs
+  audit: {                         // structured audit of every change + findings
+    schemaVersion: 1;
+    command: "install" | "update";
+    findings: Array<{              // rosie's own warnings, e.g. tag_rewritten
+      severity: "high";
+      kind: "tag_rewritten" | string;
+      skill: string;
+      ref: string;
+      oldSha: string;
+      newSha: string;
+    }>;
+    changes: Array<{
+      name: string;
+      kind: "skill" | "reference";
+      source: string;
+      ref: string;
+      sha: string;
+      operation: "install" | "update";
+      content: string | null;      // full sanitized body, first-install only
+      diff: string | null;         // unified diff, updates only
+    }>;
+  };
 }
 ```
 
@@ -108,6 +130,27 @@ await rosie.remove('pdf');
 await rosie.update();           // update everything in rosie.lock
 await rosie.update('pdf');      // update just one
 ```
+
+### Security defenses
+
+Every install applies content sanitization and structured auditing by
+default; see [docs/security](https://rosie.cli/docs/security/) for the full
+threat model. Each defense can be disabled per call via `InstallOptions`:
+
+```js
+await rosie.install('anthropics/skills', {
+  stripComments: false,      // keep markdown comments in reference installs
+  stripInvisible: false,     // keep zero-width / bidi / tag-block codepoints
+  retagDetect: false,        // skip the tag-rewrite check on `rosie update`
+  forceAudit: true,          // print audit on stdout regardless of context
+  suppressAudit: true,       // never print audit on stdout (still in result)
+});
+```
+
+`forceAudit` and `suppressAudit` are mutually exclusive; passing both throws.
+The `audit` field on the result is always populated regardless of the
+emission flags — those flags only control whether the wrapped text is
+written to stdout by the CLI / bin.ts launcher.
 
 ### Working directory
 

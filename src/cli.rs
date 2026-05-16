@@ -42,6 +42,14 @@ fn print_usage(prog: &str) {
     println!("  -h, --help              Show this help message");
     println!("  -V, --version           Print version and exit");
     println!();
+    println!("Security options (defaults all on; see docs/security):");
+    println!("  --no-strip-comments     Disable markdown-comment stripping on reference installs");
+    println!("  --no-strip-invisible    Disable invisible-Unicode stripping on refs and skills");
+    println!("  --no-strip              Shorthand: disable both comment + invisible stripping");
+    println!("  --no-retag-detect       Skip the tag-rewrite check on `rosie update`");
+    println!("  --audit                 Force-emit the audit log on stdout (default: auto-detect agent context)");
+    println!("  --no-audit              Suppress audit log on stdout (the JS API still returns it)");
+    println!();
     println!("Examples:");
     println!("  {prog} install vercel-labs/agent-skills");
     println!("  {prog} install anthropics/skills pdf");
@@ -166,6 +174,8 @@ fn handle_parse(res: Result<(), lexopt::Error>) -> Option<i32> {
 }
 
 fn cmd_install(prog: &str, args: Vec<std::ffi::OsString>, list_only: bool) -> i32 {
+    crate::audit::clear();
+    crate::audit::set_command(crate::audit::Operation::Install);
     let mut opts = InstallOptions::default();
     opts.list_only = list_only;
     let mut positional: Vec<String> = Vec::new();
@@ -197,6 +207,15 @@ fn cmd_install(prog: &str, args: Vec<std::ffi::OsString>, list_only: bool) -> i3
                     return Err(lexopt::Error::Custom(HELP_SENTINEL.into()));
                 }
                 Long("no-lockfile") => opts.skip_lockfile = true,
+                Long("no-strip-comments") => opts.strip_comments = false,
+                Long("no-strip-invisible") => opts.strip_invisible = false,
+                Long("no-strip") => {
+                    opts.strip_comments = false;
+                    opts.strip_invisible = false;
+                }
+                Long("no-retag-detect") => opts.retag_detect = false,
+                Long("audit") => opts.force_audit = true,
+                Long("no-audit") => opts.suppress_audit = true,
                 Value(v) => positional.push(v.string()?),
                 _ => return Err(arg.unexpected()),
             }
@@ -205,6 +224,11 @@ fn cmd_install(prog: &str, args: Vec<std::ffi::OsString>, list_only: bool) -> i3
     })();
     if let Some(rc) = handle_parse(parse_res) {
         return rc;
+    }
+
+    if opts.force_audit && opts.suppress_audit {
+        crate::log::error("--audit and --no-audit are mutually exclusive");
+        return 1;
     }
 
     // Validation parallels main.c's cmd_install checks.
@@ -239,7 +263,9 @@ fn cmd_install(prog: &str, args: Vec<std::ffi::OsString>, list_only: bool) -> i3
         if list_only {
             return install::list_installed_skills();
         }
-        return install::install_from_lockfile(&opts);
+        let rc = install::install_from_lockfile(&opts);
+        emit_audit_if_appropriate(&opts);
+        return rc;
     }
 
     opts.spec = Some(positional[0].clone());
@@ -260,10 +286,34 @@ fn cmd_install(prog: &str, args: Vec<std::ffi::OsString>, list_only: bool) -> i3
         }
     }
 
-    install::install_package(&opts)
+    let rc = install::install_package(&opts);
+    emit_audit_if_appropriate(&opts);
+    rc
+}
+
+/// Drain the audit accumulator and print to stdout if the operation should
+/// produce visible audit output. The decision: emit when an agent context
+/// is detected (env vars) or forced via --audit, unless suppressed via
+/// --no-audit. The structured InstallResult.audit field is unaffected by
+/// this gate — only the human-visible stdout emission is.
+fn emit_audit_if_appropriate(opts: &InstallOptions) {
+    let audit = crate::audit::drain();
+    if audit.is_empty() {
+        return;
+    }
+    if opts.suppress_audit {
+        return;
+    }
+    let in_context = crate::os::is_agent_context();
+    if !in_context && !opts.force_audit {
+        return;
+    }
+    println!("{}", crate::audit::format_for_stdout(&audit));
 }
 
 fn cmd_update(args: Vec<std::ffi::OsString>) -> i32 {
+    crate::audit::clear();
+    crate::audit::set_command(crate::audit::Operation::Update);
     let mut opts = InstallOptions::default();
     let mut positional: Vec<String> = Vec::new();
 
@@ -282,6 +332,15 @@ fn cmd_update(args: Vec<std::ffi::OsString>) -> i32 {
                     return Err(lexopt::Error::Custom(HELP_SENTINEL.into()));
                 }
                 Long("no-lockfile") => opts.skip_lockfile = true,
+                Long("no-strip-comments") => opts.strip_comments = false,
+                Long("no-strip-invisible") => opts.strip_invisible = false,
+                Long("no-strip") => {
+                    opts.strip_comments = false;
+                    opts.strip_invisible = false;
+                }
+                Long("no-retag-detect") => opts.retag_detect = false,
+                Long("audit") => opts.force_audit = true,
+                Long("no-audit") => opts.suppress_audit = true,
                 Value(v) => positional.push(v.string()?),
                 _ => return Err(arg.unexpected()),
             }
@@ -291,8 +350,14 @@ fn cmd_update(args: Vec<std::ffi::OsString>) -> i32 {
     if let Some(rc) = handle_parse(parse_res) {
         return rc;
     }
+    if opts.force_audit && opts.suppress_audit {
+        crate::log::error("--audit and --no-audit are mutually exclusive");
+        return 1;
+    }
     let only = positional.first().map(String::as_str);
-    install::update_skills(&opts, only)
+    let rc = install::update_skills(&opts, only);
+    emit_audit_if_appropriate(&opts);
+    rc
 }
 
 fn cmd_remove(prog: &str, args: Vec<std::ffi::OsString>) -> i32 {

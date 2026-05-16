@@ -236,6 +236,80 @@ await withTmp('install-partial-agent-failure', async (tmp) => {
     assert(skills.length === 1, 'lockfile should still record the skill');
 });
 
+await withTmp('install-audit-shape', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    const result = await rosie.install('fake-org/skills', { cwd: project });
+    assert(result.audit !== undefined, 'InstallResult.audit missing');
+    assert(result.audit.schemaVersion === 1, 'schemaVersion must be 1');
+    assert(result.audit.command === 'install', `expected command=install, got ${result.audit.command}`);
+    assert(Array.isArray(result.audit.findings), 'findings must be an array');
+    assert(Array.isArray(result.audit.changes), 'changes must be an array');
+    assert(result.audit.changes.length === 1, `expected 1 change, got ${result.audit.changes.length}`);
+    const change = result.audit.changes[0];
+    assert(change.name === 'my-skill', 'change.name should be my-skill');
+    assert(change.kind === 'skill', 'change.kind should be skill');
+    assert(change.operation === 'install', 'change.operation should be install (first-time)');
+    assert(typeof change.content === 'string' && change.content.length > 0, 'change.content should be populated for first install');
+    assert(change.diff === null, 'change.diff should be null for first install');
+});
+
+await withTmp('retag-finding-shape', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    // Stage a lockfile with a stale SHA for v1.0.0; mock server returns bbbb...
+    fs.mkdirSync(path.join(project, '.agents/skills/my-skill'), { recursive: true });
+    fs.writeFileSync(
+        path.join(project, '.agents/skills/my-skill/SKILL.md'),
+        '---\nname: my-skill\ndescription: stale\n---\n\n# my-skill\n\nstale\n',
+    );
+    fs.writeFileSync(
+        path.join(project, '.agents/rosie.lock'),
+        '# rosie-lock v1\nmy-skill fake-org/skills v1.0.0 ' +
+            'dddddddddddddddddddddddddddddddddddddddd 2025-01-01T00:00:00Z pin skill\n',
+    );
+    const result = await rosie.update(undefined, { cwd: project });
+    assert(result.audit !== undefined, 'audit missing');
+    const finding = result.audit.findings.find(f => f.kind === 'tag_rewritten');
+    assert(finding !== undefined, 'expected a tag_rewritten finding');
+    assert(finding.severity === 'high', 'finding severity should be high');
+    assert(finding.skill === 'my-skill', 'finding.skill should be my-skill');
+    assert(finding.oldSha === 'd'.repeat(40), 'oldSha mismatch');
+    assert(finding.newSha === 'b'.repeat(40), 'newSha mismatch');
+});
+
+await withTmp('sanitize-applied-via-wasm', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    await rosie.install('fake-org/hostile', { cwd: project, ref: true });
+    const ref = fs.readFileSync(path.join(project, '.agents/references/fake-org-hostile/REFERENCE.md'), 'utf8');
+    assert(!ref.includes('ROSIE_TEST_HOSTILE_HTML_COMMENT'), 'html comment should be stripped');
+    assert(!ref.includes('ROSIE_TEST_LINK_FORM_COMMENT'), 'link-form comment should be stripped');
+    assert(ref.includes('ROSIE_TEST_FENCED_PRESERVED'), 'fenced comment should be preserved');
+    assert(!ref.includes('​'), 'U+200B should be stripped');
+});
+
+await withTmp('js-opts-strip-disabled', async (tmp) => {
+    const project = path.join(tmp, 'project');
+    await rosie.install('fake-org/hostile', {
+        cwd: project,
+        ref: true,
+        stripComments: false,
+        stripInvisible: false,
+    });
+    const ref = fs.readFileSync(path.join(project, '.agents/references/fake-org-hostile/REFERENCE.md'), 'utf8');
+    assert(ref.includes('ROSIE_TEST_HOSTILE_HTML_COMMENT'), 'comment should be preserved with stripComments:false');
+    assert(ref.includes('​'), 'U+200B should be preserved with stripInvisible:false');
+});
+
+await withTmp('js-opts-mutex-rejection', async () => {
+    let threw = false;
+    try {
+        await rosie.install('fake-org/skills', { forceAudit: true, suppressAudit: true });
+    } catch (e) {
+        threw = true;
+        assert(/mutually exclusive/i.test(e.message), `expected mutex error, got: ${e.message}`);
+    }
+    assert(threw, 'expected install to throw on forceAudit + suppressAudit');
+});
+
 // ---- summary --------------------------------------------------------------
 
 console.log();

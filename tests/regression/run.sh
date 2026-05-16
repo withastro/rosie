@@ -139,6 +139,21 @@ for case_dir in "$HERE/cases"/*/; do
     export FIXTURE_ROOT
     export CASE_DIR="$case_dir"
     export PROJECT_DIR="$tmp/project"
+    # Unset agent-context env vars that would otherwise leak from the
+    # developer's shell (Claude Code, Cursor, etc.) and cause cases to
+    # spuriously emit the audit log on stdout. Cases that exercise the
+    # emit path set ROSIE_AGENT_CONTEXT=1 explicitly. List mirrors
+    # src/os/native.rs::AGENT_ENV_VARS + ROSIE_AGENT_CONTEXT.
+    unset ROSIE_AGENT_CONTEXT AI_AGENT \
+          CLAUDECODE CLAUDE_CODE CLAUDE_CODE_SSE_PORT \
+          CURSOR_TRACE_ID CURSOR_AGENT CURSOR_EXTENSION_HOST_ROLE \
+          GEMINI_CLI \
+          CODEX_SANDBOX CODEX_CI CODEX_THREAD_ID \
+          OPENCODE_CLIENT \
+          ANTIGRAVITY_AGENT \
+          AUGMENT_AGENT \
+          REPL_ID \
+          COPILOT_MODEL COPILOT_ALLOW_ALL COPILOT_GITHUB_TOKEN
 
     (
         # Subshells inherit the parent's EXIT trap; without clearing it here,
@@ -159,12 +174,14 @@ for case_dir in "$HERE/cases"/*/; do
         (
             trap - EXIT INT TERM
             cd "$tmp/project" && . "$HERE/lib/assert.sh" && . "$case_dir/assertions.sh"
+            # Propagate per-case failure count via subshell exit code so the
+            # parent runner can detect any _fail calls. Without this, cases
+            # could record FAIL lines on stderr but still get marked PASS.
+            exit "$CASE_FAILURES"
         )
-        # The subshell can't mutate CASE_FAILURES in our process; we read its
-        # exit code instead. assertions.sh should `exit 1` after any _fail.
         sub_rc=$?
         if [ "$sub_rc" -ne 0 ]; then
-            CASE_FAILURES=$((CASE_FAILURES + 1))
+            CASE_FAILURES=$((CASE_FAILURES + sub_rc))
         fi
     fi
 

@@ -57,6 +57,27 @@ assert_symlink_target() {
     fi
 }
 
+assert_regular_file() {
+    # assert_regular_file <path>: exists, is a file, is NOT a symlink
+    if [ -L "$1" ]; then
+        _fail "$1 is a symlink (expected regular file)"
+        return
+    fi
+    if [ ! -f "$1" ]; then
+        _fail "expected regular file does not exist: $1"
+    fi
+}
+
+assert_file_contains() {
+    # assert_file_contains <file> <needle>: literal substring search
+    assert_contains "$1" "$2"
+}
+
+assert_file_not_contains() {
+    # assert_file_not_contains <file> <needle>
+    assert_not_contains "$1" "$2"
+}
+
 assert_contains() {
     # assert_contains <file> <needle>
     if ! grep -q -F -- "$2" "$1"; then

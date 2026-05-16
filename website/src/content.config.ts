@@ -5,6 +5,7 @@ const docs = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './src/content/docs' }),
   schema: z.object({
     title: z.string().optional(),
+    navOrder: z.number().optional(),
   }),
 });
 

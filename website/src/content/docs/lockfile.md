@@ -1,5 +1,6 @@
 ---
 title: lockfile
+navOrder: 2
 ---
 
 <div class="prompt-line"><span class="prompt">$</span> <a href="/">cd ..</a></div>

@@ -1,5 +1,6 @@
 ---
 title: skill format
+navOrder: 7
 ---
 
 <div class="prompt-line"><span class="prompt">$</span> <a href="/">cd ..</a></div>

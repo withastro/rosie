@@ -1,5 +1,6 @@
 ---
 title: discovery
+navOrder: 8
 ---
 
 <div class="prompt-line"><span class="prompt">$</span> <a href="/">cd ..</a></div>

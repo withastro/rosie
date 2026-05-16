@@ -334,6 +334,42 @@ pre.astro-code {
   .bullet-list .val { grid-column: 2; }
 }
 
+/* ---------- docs-table ---------- */
+.docs-table {
+  border-collapse: collapse;
+  margin: 0 0 1rem;
+  width: 100%;
+}
+.docs-table th,
+.docs-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: .35rem 0;
+}
+.docs-table th {
+  color: var(--fg);
+  font-weight: 700;
+  white-space: nowrap;
+  padding-right: 1.5rem;
+}
+.docs-table td { color: var(--fg-dim); }
+.docs-table code {
+  color: var(--fg);
+  background: rgba(127, 214, 210, .08);
+  padding: 0 .25em;
+  border-radius: 2px;
+}
+
+@media (max-width: 640px) {
+  .docs-table,
+  .docs-table tbody,
+  .docs-table tr,
+  .docs-table th,
+  .docs-table td { display: block; }
+  .docs-table th { padding: .35rem 0 .15rem; }
+  .docs-table td { padding: 0 0 .5rem; }
+}
+
 /* ---------- tabs ---------- */
 .tabs {
   display: flex;

@@ -8,17 +8,16 @@ interface Props {
 const { open = false } = Astro.props;
 
 const docs = await getCollection('docs');
-const order = ['cli', 'lockfile', 'references', 'agents', 'js-api', 'skill-format', 'discovery', 'how-it-works', 'credits'];
 
 const sortedDocs = docs
   .filter(d => d.id !== 'index')
   .sort((a, b) => {
-    const aIdx = order.indexOf(a.id);
-    const bIdx = order.indexOf(b.id);
-    if (aIdx === -1 && bIdx === -1) return a.id.localeCompare(b.id);
-    if (aIdx === -1) return 1;
-    if (bIdx === -1) return -1;
-    return aIdx - bIdx;
+    const aOrder = a.data.navOrder;
+    const bOrder = b.data.navOrder;
+    if (aOrder === undefined && bOrder === undefined) return a.id.localeCompare(b.id);
+    if (aOrder === undefined) return 1;
+    if (bOrder === undefined) return -1;
+    return aOrder - bOrder;
   });
 ---
 

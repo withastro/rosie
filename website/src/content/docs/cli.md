@@ -1,5 +1,6 @@
 ---
 title: cli
+navOrder: 1
 ---
 
 <div class="prompt-line"><span class="prompt">$</span> <a href="/">cd ..</a></div>

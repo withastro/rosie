@@ -2,3 +2,7 @@
   Link: </docs/cli/>; rel="service-doc"
   Link: </docs/how-it-works/>; rel="describedby"
   Link: </sitemap-index.xml>; rel="sitemap"
+  Link: </.well-known/api-catalog>; rel="api-catalog"
+
+/.well-known/api-catalog
+  Content-Type: application/linkset+json

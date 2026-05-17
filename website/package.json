@@ -10,6 +10,7 @@
     "deploy": "npm run build && npx wrangler deploy"
   },
   "dependencies": {
+    "@astrojs/sitemap": "^3.7.2",
     "@matthewp/zebra": "^0.2.0",
     "astro": "^6.3.1"
   }

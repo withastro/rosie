@@ -11,15 +11,13 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const PORT = parseInt(process.env.PORT ?? '8765', 10);
 
-// Bind to the JS API in the built dist/.
-const apiPath = path.join(REPO_ROOT, 'npm', 'rosie-skills', 'dist', 'index.js');
-const rosie = await import(apiPath);
+// Bind to the JS API in the built dist/. Use a file:// URL so dynamic
+// import() works the same on Windows (where absolute paths are rejected).
+const apiUrl = new URL('../../npm/rosie-skills/dist/index.js', import.meta.url);
+const rosie = await import(apiUrl.href);
 
 let passed = 0;
 let failed = 0;

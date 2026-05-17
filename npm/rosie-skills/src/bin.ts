@@ -9,13 +9,16 @@
 //      we don't ship a native binary for.
 
 import * as path from "node:path";
+import * as fs from "node:fs";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { silenceWasiExperimentalWarning } from "./silence-wasi-warning.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
+// File URL for the WASM shim. URLs (not filesystem paths) keep dynamic
+// import() portable — on Windows, import() of an absolute path fails with
+// ERR_UNSUPPORTED_ESM_URL_SCHEME.
+const WASM_ENTRY_URL = new URL("../wasm/rosie.js", import.meta.url);
 
 const forceWasm = process.env.ROSIE_FORCE_WASM === "1";
 const args = process.argv.slice(2);
@@ -49,18 +52,24 @@ interface WasmModule {
 
 async function runWasm(): Promise<void> {
   silenceWasiExperimentalWarning();
-  const wasmEntry = path.join(__dirname, "..", "wasm", "rosie.js");
-  let createRosie: () => Promise<WasmModule>;
-  try {
-    const mod = (await import(wasmEntry)) as { default: typeof createRosie };
-    createRosie = mod.default;
-  } catch {
+  // Pre-check existence so a genuinely missing bundle produces a helpful
+  // "not bundled" message rather than a confusing module-resolution error.
+  if (!fs.existsSync(WASM_ENTRY_URL)) {
     console.error(
       `rosie-skills: no native binary for ${process.platform}-${process.arch} and the WASM fallback isn't bundled.`
     );
     console.error(
       "This shouldn't happen for a normally-installed package; please file an issue at https://github.com/matthewp/rosie/issues."
     );
+    process.exit(1);
+  }
+  let createRosie: () => Promise<WasmModule>;
+  try {
+    const mod = (await import(WASM_ENTRY_URL.href)) as { default: typeof createRosie };
+    createRosie = mod.default;
+  } catch (e) {
+    console.error(`rosie-skills: failed to load WASM fallback at ${WASM_ENTRY_URL.href}: ${(e as Error).message}`);
+    console.error("Please file an issue at https://github.com/matthewp/rosie/issues.");
     process.exit(1);
   }
   const m = await createRosie();

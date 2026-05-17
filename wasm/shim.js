@@ -17,24 +17,31 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { WASI } from 'node:wasi';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WASM_PATH = path.join(__dirname, 'rosie.wasm');
+// File URL for rosie.wasm sitting alongside this shim. Node's fs accepts
+// URLs directly — avoiding fileURLToPath keeps Windows paths from getting
+// mangled.
+const WASM_URL = new URL('./rosie.wasm', import.meta.url);
 
 // ---------------------------------------------------------------------------
 // createRosie({ noInitialRun?, print?, printErr?, arguments?, onAbort? })
 // ---------------------------------------------------------------------------
 
 async function createRosie(opts = {}) {
-    const wasmBytes = fs.readFileSync(WASM_PATH);
+    const wasmBytes = fs.readFileSync(WASM_URL);
     const module = await WebAssembly.compile(wasmBytes);
 
+    // Rosie's wasm never touches WASI fs syscalls (all file ops route
+    // through the rosie_fs_* env imports below), so the sandbox preopens
+    // here are nominal. Map both to the host tmpdir, which exists on every
+    // platform — on Windows '/tmp' isn't a real path and would make WASI
+    // initialization fail.
+    const tmp = os.tmpdir();
     const wasi = new WASI({
         version: 'preview1',
         args: opts.arguments ?? ['rosie'],
         env: process.env,
-        preopens: { '/': '/', '/tmp': '/tmp' },
+        preopens: { '/': tmp, '/tmp': tmp },
     });
 
     // Per-instance state owned by the closure below. Captured before

@@ -8,11 +8,12 @@
 // (`__rosieLog__`). We can't use Module.print here because NODERAWFS routes
 // printf to host fd 1/2 directly, bypassing the Module hook.
 
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { silenceWasiExperimentalWarning } from "./silence-wasi-warning.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// File URL for the WASM shim. Using a URL (not a filesystem path) keeps
+// dynamic import() portable — on Windows, import() of an absolute path
+// fails with ERR_UNSUPPORTED_ESM_URL_SCHEME.
+const WASM_ENTRY_URL = new URL("../wasm/rosie.js", import.meta.url);
 
 export type LogLevel = "error" | "warn" | "info" | "debug";
 
@@ -65,8 +66,7 @@ async function getOrLoadModule(): Promise<RosieModule> {
   if (modulePromise) return modulePromise;
 
   silenceWasiExperimentalWarning();
-  const wasmEntry = path.join(__dirname, "..", "wasm", "rosie.js");
-  const mod = (await import(wasmEntry)) as { default: RosieFactory };
+  const mod = (await import(WASM_ENTRY_URL.href)) as { default: RosieFactory };
   const createRosie = mod.default;
 
   modulePromise = (async () => {

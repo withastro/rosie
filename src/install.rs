@@ -747,27 +747,27 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
     ));
 
     // Resolve the ref before downloading. For auto installs, pick the
-    // highest semver tag (and fall back to the recorded branch SHA if none).
+    // highest semver tag, then fall back to main/master if no tags exist.
     let resolved: Option<ResolvedRef>;
     if !spec.ref_explicit {
-        if let Some(r) = resolve::resolve_latest_tag(&spec) {
+        if let Some(r) = resolve::resolve_auto(&spec) {
+            let kind = if r.is_tag { "" } else { " (branch)" };
             crate::log::info(&format!(
-                "Resolved {}/{} -> {}",
+                "Resolved {}/{} -> {}{}",
                 spec.owner.as_deref().unwrap_or(""),
                 spec.repo.as_deref().unwrap_or(""),
-                r.ref_
+                r.ref_,
+                kind,
             ));
             spec.ref_ = Some(r.ref_.clone());
             resolved = Some(r);
         } else {
             crate::log::debug(&format!(
-                "No semver tags for {}/{}, using {}",
+                "Could not resolve {}/{}",
                 spec.owner.as_deref().unwrap_or(""),
                 spec.repo.as_deref().unwrap_or(""),
-                spec.ref_.as_deref().unwrap_or(""),
             ));
-            let cur = spec.ref_.clone().unwrap_or_default();
-            resolved = resolve::resolve_ref(&spec, &cur);
+            resolved = None;
         }
     } else {
         let cur = spec.ref_.clone().unwrap_or_default();
@@ -1569,7 +1569,7 @@ pub fn update_skills(base_opts: &InstallOptions, only_skill: Option<&str>) -> i3
         let resolved = if e.pinned {
             resolve::resolve_ref(&ps, &e.ref_)
         } else {
-            resolve::resolve_latest_tag(&ps).or_else(|| resolve::resolve_ref(&ps, &e.ref_))
+            resolve::resolve_auto(&ps).or_else(|| resolve::resolve_ref(&ps, &e.ref_))
         };
 
         let r = match resolved {

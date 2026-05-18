@@ -2,10 +2,12 @@
 //
 // Queries `<base>/<owner>/<repo>/info/refs?service=git-upload-pack`, parses
 // the pkt-line response, and exposes:
+//   - resolve_auto(spec):          latest semver tag, falling back to the
+//                                  default branch (main, then master)
 //   - resolve_latest_tag(spec):    highest semver tag (skipping pre-releases)
 //   - resolve_ref(spec, ref_name): SHA for a specific branch or tag name
 //
-// Used by install_package's auto-pin behavior (no @ref → latest tag) and by
+// Used by install_package's auto-pin behavior (no @ref → resolve_auto) and by
 // `rosie update` to refresh SHAs.
 
 use crate::download::PackageSpec;
@@ -115,8 +117,9 @@ struct SemVer {
     has_prerelease: bool,
 }
 
-/// Accept "1.2.3", "v1.2.3", optionally followed by "-..." (prerelease) or
-/// "+..." (build). Reject anything else (e.g. "1.2", "v1", "release-2026").
+/// Accept "1.2.3", "v1.2.3", or 2-part "1.2"/"v1.2" (treated as "1.2.0"),
+/// optionally followed by "-..." (prerelease) or "+..." (build). Reject
+/// anything else (e.g. "v1", "release-2026").
 fn parse_semver(s: &str) -> Option<SemVer> {
     let mut s = s.as_bytes();
     if matches!(s.first(), Some(b'v') | Some(b'V')) {
@@ -139,10 +142,13 @@ fn parse_semver(s: &str) -> Option<SemVer> {
         return None;
     }
     let (minor, rest) = take_num(&rest[1..])?;
-    if rest.first() != Some(&b'.') {
-        return None;
-    }
-    let (patch, rest) = take_num(&rest[1..])?;
+    // Optional patch — accept 2-part "X.Y" as "X.Y.0" so tags like
+    // "v0.5" sort correctly against "v0.2.1".
+    let (patch, rest) = if rest.first() == Some(&b'.') {
+        take_num(&rest[1..])?
+    } else {
+        (0, rest)
+    };
     let has_prerelease = match rest.first() {
         None => false,
         Some(&b'-') => true,
@@ -196,24 +202,23 @@ fn fetch_refs(owner: &str, repo: &str) -> Option<Vec<u8>> {
     Some(body)
 }
 
-pub fn resolve_latest_tag(spec: &PackageSpec) -> Option<ResolvedRef> {
-    let owner = spec.owner.as_deref()?;
-    let repo = spec.repo.as_deref()?;
-    let body = fetch_refs(owner, repo)?;
-    let refs = parse_refs(&body)?;
-
-    let prefix = "refs/tags/";
+/// Walk `refs` and return the highest semver tag matching one of `tag_prefixes`
+/// (each prefix should already include "refs/tags/..."). Pre-releases skipped.
+fn best_tag<'a, I>(refs: &[RawRef], tag_prefixes: I) -> Option<(usize, SemVer)>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let prefixes: Vec<&str> = tag_prefixes.into_iter().collect();
     let mut best: Option<(usize, SemVer)> = None;
-
     for (i, r) in refs.iter().enumerate() {
-        let tag = match r.name.strip_prefix(prefix) {
+        let rest = match prefixes.iter().find_map(|p| r.name.strip_prefix(*p)) {
             Some(t) => t,
             None => continue,
         };
-        if tag.ends_with("^{}") {
+        if rest.ends_with("^{}") {
             continue;
         }
-        let sv = match parse_semver(tag) {
+        let sv = match parse_semver(rest) {
             Some(v) => v,
             None => continue,
         };
@@ -226,15 +231,59 @@ pub fn resolve_latest_tag(spec: &PackageSpec) -> Option<ResolvedRef> {
             _ => {}
         }
     }
+    best
+}
 
-    let (idx, _) = best?;
+fn pick_latest_tag(refs: &[RawRef], repo: &str) -> Option<ResolvedRef> {
+    // Try name-prefixed monorepo conventions first (e.g. "react-doctor@0.0.38",
+    // "foo-v1.2.3"). Fall back to bare-semver tags (e.g. "v0.5").
+    let scoped_at = format!("refs/tags/{repo}@");
+    let scoped_dashv = format!("refs/tags/{repo}-v");
+    let scoped = [scoped_at.as_str(), scoped_dashv.as_str()];
+    let bare = ["refs/tags/"];
+
+    let (idx, _) = best_tag(refs, scoped.iter().copied())
+        .or_else(|| best_tag(refs, bare.iter().copied()))?;
+
     let name = refs[idx].name.clone();
-    let tag = name.strip_prefix(prefix).unwrap_or(&name).to_string();
+    let tag = name.strip_prefix("refs/tags/").unwrap_or(&name).to_string();
     Some(ResolvedRef {
         ref_: tag,
-        sha: peeled_sha_for(&refs, idx).to_string(),
+        sha: peeled_sha_for(refs, idx).to_string(),
         is_tag: true,
     })
+}
+
+fn pick_branch(refs: &[RawRef], name: &str) -> Option<ResolvedRef> {
+    let path = format!("refs/heads/{name}");
+    refs.iter().find(|r| r.name == path).map(|r| ResolvedRef {
+        ref_: name.to_string(),
+        sha: r.sha.clone(),
+        is_tag: false,
+    })
+}
+
+pub fn resolve_latest_tag(spec: &PackageSpec) -> Option<ResolvedRef> {
+    let owner = spec.owner.as_deref()?;
+    let repo = spec.repo.as_deref()?;
+    let body = fetch_refs(owner, repo)?;
+    let refs = parse_refs(&body)?;
+    pick_latest_tag(&refs, repo)
+}
+
+/// Auto-pin resolution: prefer the highest semver tag, otherwise fall back to
+/// the default branch ("main", then "master"). Fetches `info/refs` once and
+/// inspects all candidates from that single response.
+pub fn resolve_auto(spec: &PackageSpec) -> Option<ResolvedRef> {
+    let owner = spec.owner.as_deref()?;
+    let repo = spec.repo.as_deref()?;
+    let body = fetch_refs(owner, repo)?;
+    let refs = parse_refs(&body)?;
+
+    if let Some(r) = pick_latest_tag(&refs, repo) {
+        return Some(r);
+    }
+    pick_branch(&refs, "main").or_else(|| pick_branch(&refs, "master"))
 }
 
 pub fn resolve_ref(spec: &PackageSpec, ref_name: &str) -> Option<ResolvedRef> {
@@ -283,9 +332,17 @@ mod tests {
 
     #[test]
     fn semver_rejects_partial() {
-        assert!(parse_semver("1.2").is_none());
         assert!(parse_semver("v1").is_none());
         assert!(parse_semver("release-2026").is_none());
+    }
+
+    #[test]
+    fn semver_accepts_two_part() {
+        let two = parse_semver("v0.5").unwrap();
+        assert_eq!(two, SemVer { major: 0, minor: 5, patch: 0, has_prerelease: false });
+        // "0.5" sorts above "0.2.1"
+        let old = parse_semver("v0.2.1").unwrap();
+        assert!(semver_cmp(&two, &old).is_gt());
     }
 
     #[test]
@@ -317,5 +374,97 @@ mod tests {
         assert_eq!(refs[0].name, "refs/heads/main");
         assert_eq!(refs[0].sha, "1".repeat(40));
         assert_eq!(refs[1].name, "refs/tags/v1.0.0");
+    }
+
+    fn raw(sha_byte: char, name: &str) -> RawRef {
+        RawRef {
+            sha: std::iter::repeat(sha_byte).take(40).collect(),
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn pick_tag_two_part_beats_three_part() {
+        // jdevalk/skills shape: v0.5 must win over v0.2.1.
+        let refs = vec![
+            raw('1', "refs/tags/v0.1"),
+            raw('2', "refs/tags/v0.2"),
+            raw('3', "refs/tags/v0.2.1"),
+            raw('4', "refs/tags/v0.3"),
+            raw('5', "refs/tags/v0.4"),
+            raw('6', "refs/tags/v0.5"),
+        ];
+        let r = pick_latest_tag(&refs, "skills").unwrap();
+        assert_eq!(r.ref_, "v0.5");
+        assert!(r.is_tag);
+    }
+
+    #[test]
+    fn pick_tag_prefers_repo_scoped() {
+        // millionco/react-doctor shape: prefer "react-doctor@0.0.38"
+        // over the lone bare "0.0.1".
+        let refs = vec![
+            raw('1', "refs/tags/0.0.1"),
+            raw('2', "refs/tags/react-doctor@0.0.31"),
+            raw('3', "refs/tags/react-doctor@0.0.38"),
+        ];
+        let r = pick_latest_tag(&refs, "react-doctor").unwrap();
+        assert_eq!(r.ref_, "react-doctor@0.0.38");
+    }
+
+    #[test]
+    fn pick_tag_repo_scoped_dash_v() {
+        // <repo>-v<ver> convention (some Go monorepos).
+        let refs = vec![
+            raw('1', "refs/tags/v9.9.9"), // bare; should lose to scoped.
+            raw('2', "refs/tags/foo-v1.0.0"),
+            raw('3', "refs/tags/foo-v1.2.0"),
+        ];
+        let r = pick_latest_tag(&refs, "foo").unwrap();
+        assert_eq!(r.ref_, "foo-v1.2.0");
+    }
+
+    #[test]
+    fn pick_tag_falls_back_to_bare_when_no_scoped() {
+        let refs = vec![
+            raw('1', "refs/tags/v0.2.1"),
+            raw('2', "refs/tags/v0.5"),
+        ];
+        let r = pick_latest_tag(&refs, "anything").unwrap();
+        assert_eq!(r.ref_, "v0.5");
+    }
+
+    #[test]
+    fn pick_tag_skips_prereleases() {
+        let refs = vec![
+            raw('1', "refs/tags/v1.0.0"),
+            raw('2', "refs/tags/v1.1.0-rc.1"),
+        ];
+        let r = pick_latest_tag(&refs, "x").unwrap();
+        assert_eq!(r.ref_, "v1.0.0");
+    }
+
+    #[test]
+    fn pick_tag_none_when_no_tags() {
+        let refs = vec![raw('1', "refs/heads/main")];
+        assert!(pick_latest_tag(&refs, "x").is_none());
+    }
+
+    #[test]
+    fn pick_branch_prefers_main_then_master() {
+        let with_main = vec![
+            raw('a', "refs/heads/main"),
+            raw('b', "refs/heads/master"),
+        ];
+        let r = pick_branch(&with_main, "main").unwrap();
+        assert_eq!(r.ref_, "main");
+        assert!(!r.is_tag);
+        assert_eq!(r.sha.chars().next(), Some('a'));
+
+        // master-only repo
+        let master_only = vec![raw('c', "refs/heads/master")];
+        assert!(pick_branch(&master_only, "main").is_none());
+        let r = pick_branch(&master_only, "master").unwrap();
+        assert_eq!(r.ref_, "master");
     }
 }

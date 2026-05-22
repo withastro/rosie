@@ -27,7 +27,7 @@ pub const AGENT_DEFS: &[AgentDef] = &[
     // --- Original 12 (paths fixed for amplify->augment, aider->.aider-desk, copilot) ---
     AgentDef { name: "claude",     display: "Claude Code",     aliases: &[],           project_path: ".claude/skills",     global_path: ".claude/skills",          detect_dir: ".claude",          binary: Some("claude") },
     AgentDef { name: "cursor",     display: "Cursor",          aliases: &[],           project_path: ".cursor/skills",     global_path: ".cursor/skills",          detect_dir: ".cursor",          binary: Some("cursor") },
-    AgentDef { name: "opencode",   display: "OpenCode",        aliases: &[],           project_path: ".opencode/skills",   global_path: ".config/opencode/skills", detect_dir: ".opencode",        binary: Some("opencode") },
+    AgentDef { name: "opencode",   display: "OpenCode",        aliases: &[],           project_path: ".opencode/skills",   global_path: ".config/opencode/skills", detect_dir: ".config/opencode", binary: Some("opencode") },
     AgentDef { name: "cline",      display: "Cline",           aliases: &[],           project_path: ".cline/skills",      global_path: ".cline/skills",           detect_dir: ".cline",           binary: None },
     AgentDef { name: "codex",      display: "Codex",           aliases: &[],           project_path: ".codex/skills",      global_path: ".codex/skills",           detect_dir: ".codex",           binary: Some("codex") },
     AgentDef { name: "windsurf",   display: "Windsurf",        aliases: &[],           project_path: ".windsurf/skills",   global_path: ".codeium/windsurf/skills", detect_dir: ".windsurf",       binary: None },

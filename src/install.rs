@@ -27,6 +27,24 @@ pub const LOCAL_AGENTS_DIR: &str = ".agents";
 pub const LOCAL_SKILLS_DIR: &str = ".agents/skills";
 pub const LOCAL_REFERENCES_DIR: &str = ".agents/references";
 
+// Subdirectory under `$HOME` for the global lockfile. Mirrors the project
+// `.agents/` layout — only `rosie.lock` lives here today; no canonical skills
+// or references dir, since global installs symlink agent dirs directly at the
+// source path with no intermediate hop.
+pub const GLOBAL_AGENTS_SUBDIR: &str = ".agents";
+
+/// Directory that holds `rosie.lock` for the given scope. Returns the
+/// project-relative `.agents` for `global=false`, and `$HOME/.agents` for
+/// `global=true`. Returns None if `$HOME` is unset under `global=true`.
+pub fn lockfile_dir(global: bool) -> Option<PathBuf> {
+    if global {
+        let home = os::home_dir()?;
+        Some(PathBuf::from(home).join(GLOBAL_AGENTS_SUBDIR))
+    } else {
+        Some(PathBuf::from(LOCAL_AGENTS_DIR))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Options structs — mirror InstallOptions / RemoveOptions in install.h.
 // ---------------------------------------------------------------------------
@@ -174,9 +192,11 @@ pub fn install_skill_to_agent(skill: &Skill, agent: &Agent, opts: &InstallOption
 ///
 /// When an agent's project path *is* the canonical store (`.agents/skills`),
 /// no symlink is needed — the skill already lives where the agent looks.
-/// For other agents, build a relative `../../...` prefix with one `..` per
-/// path component in `agent.install_path` so the link is correct for any
-/// install depth (e.g. `.tabnine/agent/skills` needs three).
+/// For project installs (relative `canonical_path`), build a relative
+/// `../../...` prefix with one `..` per path component in `agent.install_path`
+/// so the link is correct for any install depth (e.g. `.tabnine/agent/skills`
+/// needs three). For global installs (absolute `canonical_path`), link
+/// directly with no rewriting.
 fn install_skill_local(skill_name: &str, agent: &Agent, canonical_path: &Path) -> i32 {
     if agent.install_path.as_path() == Path::new(LOCAL_SKILLS_DIR) {
         return 0;
@@ -202,22 +222,26 @@ fn install_skill_local(skill_name: &str, agent: &Agent, canonical_path: &Path) -
             _ => {}
         }
     }
-    let depth = agent
-        .install_path
-        .components()
-        .filter(|c| matches!(c, std::path::Component::Normal(_)))
-        .count();
-    let mut prefix = String::new();
-    for _ in 0..depth {
-        prefix.push_str("../");
-    }
-    let relative_target = PathBuf::from(format!("{}{}", prefix, canonical_path.display()));
+    let target = if canonical_path.is_absolute() {
+        canonical_path.to_path_buf()
+    } else {
+        let depth = agent
+            .install_path
+            .components()
+            .filter(|c| matches!(c, std::path::Component::Normal(_)))
+            .count();
+        let mut prefix = String::new();
+        for _ in 0..depth {
+            prefix.push_str("../");
+        }
+        PathBuf::from(format!("{}{}", prefix, canonical_path.display()))
+    };
     crate::log::debug(&format!(
         "Symlink: {} -> {}",
         link_path.display(),
-        relative_target.display()
+        target.display()
     ));
-    rosie_create_link(&relative_target, &link_path, true)
+    rosie_create_link(&target, &link_path, true)
 }
 
 fn install_to_canonical(skill: &Skill, opts: &InstallOptions) -> Option<PathBuf> {
@@ -246,10 +270,6 @@ fn install_to_canonical(skill: &Skill, opts: &InstallOptions) -> Option<PathBuf>
 // ---------------------------------------------------------------------------
 
 fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
-    if opts.global {
-        crate::log::error("Local skills cannot be installed globally; drop --global");
-        return -1;
-    }
     let canonical_path = PathBuf::from(canonical_rel);
     if !os::is_dir(&canonical_path) {
         crate::log::error(&format!("Local skill directory not found: {canonical_rel}"));
@@ -280,9 +300,9 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
 
     let agents = if !opts.agent_names.is_empty() {
         let names: Vec<&str> = opts.agent_names.iter().map(String::as_str).collect();
-        agent::agents_from_names(&names, false)
+        agent::agents_from_names(&names, opts.global)
     } else {
-        agent::detect_agents(false)
+        agent::detect_agents(opts.global)
     };
     if agents.is_empty() {
         crate::log::error("No agents detected. Use --agent to specify target agent.");
@@ -295,12 +315,26 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
         return 0;
     }
 
+    // Choose the link target each per-agent symlink will point at. For project
+    // installs, agent symlinks hop through the canonical `.agents/skills/<name>`
+    // so retargeting only touches one place. For global installs, there is no
+    // canonical store — agent symlinks point directly at the absolute source.
+    let link_target = if opts.global {
+        PathBuf::from(canonical_rel)
+    } else {
+        PathBuf::from(LOCAL_SKILLS_DIR).join(&skill.name)
+    };
+
     if !opts.yes {
+        let target_label = if opts.global {
+            canonical_rel.to_string()
+        } else {
+            format!("{LOCAL_SKILLS_DIR}/{}", skill.name)
+        };
         let prompt = format!(
-            "\nLink {} -> {}/{} for {} agent(s)? [Y/n] ",
+            "\nLink {} -> {} for {} agent(s)? [Y/n] ",
             canonical_rel,
-            LOCAL_SKILLS_DIR,
-            skill.name,
+            target_label,
             agents.len()
         );
         if !ask_yes_no(&prompt) {
@@ -309,59 +343,61 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
         }
     }
 
-    if let Err(e) = os::create_dir_all(Path::new(LOCAL_SKILLS_DIR)) {
-        crate::log::error(&format!("Cannot create directory: {LOCAL_SKILLS_DIR}: {e}"));
-        return -1;
-    }
-
-    // canonical symlink target: ../../<canonical_rel_without_./>
-    let rel_for_link = canonical_rel.strip_prefix("./").unwrap_or(canonical_rel);
-    let canonical_target = if rel_for_link.is_empty() || rel_for_link == "." {
-        PathBuf::from("../..")
-    } else {
-        PathBuf::from(format!("../../{rel_for_link}"))
-    };
-    let canonical_link = PathBuf::from(LOCAL_SKILLS_DIR).join(&skill.name);
-
-    match os::symlink_metadata(&canonical_link) {
-        Ok(m) if m.kind == os::FileKind::Symlink => {
-            let existing = os::read_link(&canonical_link).unwrap_or_default();
-            if existing == canonical_target.to_string_lossy() {
-                crate::log::debug(&format!(
-                    "Canonical symlink already correct: {}",
-                    canonical_link.display()
-                ));
-            } else if os::remove_file(&canonical_link).is_err()
-                || rosie_create_link(&canonical_target, &canonical_link, true) != 0
-            {
-                return -1;
-            }
-        }
-        Ok(_) => {
-            crate::log::error(&format!(
-                "Refusing to overwrite existing non-symlink at {}",
-                canonical_link.display()
-            ));
+    if !opts.global {
+        if let Err(e) = os::create_dir_all(Path::new(LOCAL_SKILLS_DIR)) {
+            crate::log::error(&format!("Cannot create directory: {LOCAL_SKILLS_DIR}: {e}"));
             return -1;
         }
-        Err(_) => {
-            if rosie_create_link(&canonical_target, &canonical_link, true) != 0 {
+
+        // canonical symlink target: ../../<canonical_rel_without_./>
+        let rel_for_link = canonical_rel.strip_prefix("./").unwrap_or(canonical_rel);
+        let canonical_target = if rel_for_link.is_empty() || rel_for_link == "." {
+            PathBuf::from("../..")
+        } else {
+            PathBuf::from(format!("../../{rel_for_link}"))
+        };
+        let canonical_link = &link_target;
+
+        match os::symlink_metadata(canonical_link) {
+            Ok(m) if m.kind == os::FileKind::Symlink => {
+                let existing = os::read_link(canonical_link).unwrap_or_default();
+                if existing == canonical_target.to_string_lossy() {
+                    crate::log::debug(&format!(
+                        "Canonical symlink already correct: {}",
+                        canonical_link.display()
+                    ));
+                } else if os::remove_file(canonical_link).is_err()
+                    || rosie_create_link(&canonical_target, canonical_link, true) != 0
+                {
+                    return -1;
+                }
+            }
+            Ok(_) => {
+                crate::log::error(&format!(
+                    "Refusing to overwrite existing non-symlink at {}",
+                    canonical_link.display()
+                ));
                 return -1;
             }
+            Err(_) => {
+                if rosie_create_link(&canonical_target, canonical_link, true) != 0 {
+                    return -1;
+                }
+            }
         }
-    }
 
-    crate::log::info(&format!(
-        "  {} -> {}",
-        canonical_link.display(),
-        canonical_target.display()
-    ));
+        crate::log::info(&format!(
+            "  {} -> {}",
+            canonical_link.display(),
+            canonical_target.display()
+        ));
+    }
 
     let mut linked = 0;
     let mut ok_agents = Vec::new();
     let mut fail_agents = Vec::new();
     for a in &agents {
-        if install_skill_local(&skill.name, a, &canonical_link) == 0 {
+        if install_skill_local(&skill.name, a, &link_target) == 0 {
             linked += 1;
             ok_agents.push(a.def.name.to_string());
         } else {
@@ -377,7 +413,18 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
     });
 
     if !opts.skip_lockfile {
-        let mut lf = Lockfile::load(Path::new(LOCAL_AGENTS_DIR));
+        let Some(lf_dir) = lockfile_dir(opts.global) else {
+            crate::log::error("Cannot determine home directory for global lockfile");
+            return -1;
+        };
+        if let Err(e) = os::create_dir_all(&lf_dir) {
+            crate::log::error(&format!(
+                "Cannot create directory: {} ({e})",
+                lf_dir.display()
+            ));
+            return -1;
+        }
+        let mut lf = Lockfile::load(&lf_dir);
         let now = lockfile::now_iso8601();
         let source = format!("file://{canonical_rel}");
         lf.upsert(&skill.name, &source, "-", "-", &now, true, LockKind::Skill);
@@ -730,7 +777,7 @@ pub fn install_package(opts: &InstallOptions) -> i32 {
         return install_npm_references(opts);
     }
 
-    let mut spec = match download::parse(spec_str) {
+    let mut spec = match download::parse(spec_str, opts.global) {
         Some(s) => s,
         None => return -1,
     };
@@ -1165,7 +1212,11 @@ fn build_spec_string(source: &str, ref_: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
-    let lf = Lockfile::load(Path::new(LOCAL_AGENTS_DIR));
+    let Some(lf_dir) = lockfile_dir(base_opts.global) else {
+        crate::log::error("Cannot determine home directory for global lockfile");
+        return 1;
+    };
+    let lf = Lockfile::load(&lf_dir);
     if lf.entries.is_empty() {
         crate::log::error(&format!(
             "No lockfile entries to install ({})",
@@ -1183,6 +1234,17 @@ pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
     let (mut ok, mut fail, mut fresh, mut present) = (0, 0, 0, 0);
 
     for e in &snap {
+        // v1 scope: the global lockfile only tracks local skill installs.
+        // Skip anything else with a warning rather than recursing into
+        // download / ref-install machinery that hasn't been wired through.
+        if base_opts.global && !source_is_local(&e.source) {
+            crate::log::info(&format!(
+                "warning: {}: --global only supports local skill installs, skipping ({})",
+                e.skill_name, e.source
+            ));
+            continue;
+        }
+
         // npm: refs are symlinks into node_modules/. Recreate the single
         // symlink for this entry. No version refresh (`rosie update` does that).
         if source_is_npm(&e.source) {
@@ -1231,7 +1293,7 @@ pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
                 skill_name: Some(e.skill_name.clone()),
                 yes: true,
                 list_only: false,
-                global: false,
+                global: base_opts.global,
                 override_pinned: false,
                 pinned: false,
                 ..base_opts.clone()
@@ -1337,9 +1399,12 @@ pub fn install_from_lockfile(base_opts: &InstallOptions) -> i32 {
         }
     }
 
-    // Refresh AGENTS.md from final lockfile state.
-    let lf_final = Lockfile::load(Path::new(LOCAL_AGENTS_DIR));
-    let _ = agentsmd::rebuild_block(&lf_final);
+    // Refresh AGENTS.md from final lockfile state. Global installs don't
+    // touch a user-level AGENTS.md / CLAUDE.md, so skip for `--global`.
+    if !base_opts.global {
+        let lf_final = Lockfile::load(Path::new(LOCAL_AGENTS_DIR));
+        let _ = agentsmd::rebuild_block(&lf_final);
+    }
 
     if fail > 0 {
         crate::log::error(&format!(
@@ -1557,7 +1622,7 @@ pub fn update_skills(base_opts: &InstallOptions, only_skill: Option<&str>) -> i3
             continue;
         }
 
-        let ps = match download::parse(&e.source) {
+        let ps = match download::parse(&e.source, false) {
             Some(p) => p,
             None => {
                 crate::log::error(&format!("update: cannot parse source '{}'", e.source));

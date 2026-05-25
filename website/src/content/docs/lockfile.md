@@ -48,7 +48,7 @@ navOrder: 2
     <li>
       <span class="bullet">▸</span>
       <strong class="key">file://</strong>
-      <span class="val"><code>rosie install ./my-skill</code> writes a <code>file://</code> source · hand-authored skills in your repo travel with it</span>
+      <span class="val"><code>rosie install ./my-skill</code> writes a <code>file://</code> source · hand-authored skills in your repo travel with it · with <code>--global</code>, the same form lands in <code>~/.agents/rosie.lock</code> with an absolute path</span>
     </li>
     <li>
       <span class="bullet">▸</span>

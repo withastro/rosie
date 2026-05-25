@@ -58,7 +58,7 @@ $ rosie install owner/repo -y
   <h3 class="sub-label">flags</h3>
   <ul class="bullet-list">
     <li><span class="bullet">▸</span><strong class="key">-a, --agent &lt;name&gt;</strong><span class="val">install to a specific agent (repeatable)</span></li>
-    <li><span class="bullet">▸</span><strong class="key">-g, --global</strong><span class="val">install globally to <code>~/.&lt;agent&gt;/skills/</code> (copies files)</span></li>
+    <li><span class="bullet">▸</span><strong class="key">-g, --global</strong><span class="val">install globally to <code>~/.&lt;agent&gt;/skills/</code> · GitHub sources are copied · local paths are symlinked in place</span></li>
     <li><span class="bullet">▸</span><strong class="key">-l, --local</strong><span class="val">install locally with symlinks (default)</span></li>
     <li><span class="bullet">▸</span><strong class="key">-r, --ref</strong><span class="val">install as a reference (README, or a SKILL.md via <code>--skill</code>)</span></li>
     <li><span class="bullet">▸</span><strong class="key">-s, --skill &lt;name&gt;</strong><span class="val">with <code>--ref</code>: install a specific SKILL.md</span></li>
@@ -83,7 +83,7 @@ $ rosie install owner/repo -y
     <li>
       <span class="bullet">▸</span>
       <strong class="key">global (<code>--global</code>)</strong>
-      <span class="val">files copied directly into <code>~/.&lt;agent&gt;/skills/&lt;name&gt;/</code> for every detected agent. shared across projects, no lockfile, no symlinks.</span>
+      <span class="val">installs into <code>~/.&lt;agent&gt;/skills/&lt;name&gt;/</code> for every detected agent. shared across projects. GitHub sources are copied (no lockfile). local paths (<code>rosie install ~/skills/my-skill -g</code>) are symlinked directly at the source and tracked in <code>~/.agents/rosie.lock</code> — re-run with no args to re-link after a machine wipe.</span>
     </li>
   </ul>
 </section>

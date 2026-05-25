@@ -31,7 +31,8 @@ navOrder: 9
    │
    └─▶ install
        local:  copy to .agents/skills/, symlink to each agent
-       global: copy directly to each ~/.&lt;agent&gt;/skills/</pre>
+       global: copy directly to each ~/.&lt;agent&gt;/skills/
+               (local paths are symlinked in place, tracked in ~/.agents/rosie.lock)</pre>
 
   <ul class="bullet-list">
     <li>

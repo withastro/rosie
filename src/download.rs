@@ -96,10 +96,12 @@ fn looks_like_local_path(spec: &str) -> bool {
     false
 }
 
-/// Resolve a user-supplied path to a "./<rel>" form rooted at the current
-/// working directory. Expands a leading `~/`, canonicalizes via std::fs::
-/// canonicalize, rejects paths outside the cwd.
-fn canonicalize_local_path(user_path: &str) -> Option<String> {
+/// Resolve a user-supplied path. Expands a leading `~/` and canonicalizes via
+/// std::fs::canonicalize. For project installs (`global=false`) returns a
+/// `./<rel>` form rooted at the current working directory and rejects paths
+/// outside the cwd. For global installs returns the absolute path as-is so
+/// the source can live anywhere under `$HOME` (or elsewhere).
+fn canonicalize_local_path(user_path: &str, global: bool) -> Option<String> {
     if user_path.is_empty() {
         return None;
     }
@@ -123,6 +125,10 @@ fn canonicalize_local_path(user_path: &str) -> Option<String> {
             return None;
         }
     };
+
+    if global {
+        return Some(abs.to_string_lossy().into_owned());
+    }
 
     let cwd = match os::current_dir() {
         Ok(p) => p,
@@ -150,7 +156,7 @@ fn canonicalize_local_path(user_path: &str) -> Option<String> {
     }
 }
 
-pub fn parse(spec: &str) -> Option<PackageSpec> {
+pub fn parse(spec: &str, global: bool) -> Option<PackageSpec> {
     // Local-path / file:// shortcut.
     let local_input: Option<&str> = if source_is_local(spec) {
         source_local_path(spec)
@@ -160,7 +166,7 @@ pub fn parse(spec: &str) -> Option<PackageSpec> {
         None
     };
     if let Some(p) = local_input {
-        let canonical = canonicalize_local_path(p)?;
+        let canonical = canonicalize_local_path(p, global)?;
         return Some(PackageSpec {
             owner: None,
             repo: None,
@@ -285,7 +291,7 @@ mod tests {
 
     #[test]
     fn parse_basic() {
-        let s = parse("foo/bar").unwrap();
+        let s = parse("foo/bar", false).unwrap();
         assert_eq!(s.owner.as_deref(), Some("foo"));
         assert_eq!(s.repo.as_deref(), Some("bar"));
         assert_eq!(s.ref_.as_deref(), Some("main"));
@@ -294,14 +300,14 @@ mod tests {
 
     #[test]
     fn parse_pinned() {
-        let s = parse("foo/bar@v1.0.0").unwrap();
+        let s = parse("foo/bar@v1.0.0", false).unwrap();
         assert_eq!(s.ref_.as_deref(), Some("v1.0.0"));
         assert!(s.ref_explicit);
     }
 
     #[test]
     fn parse_with_skill() {
-        let s = parse("foo/bar#my-skill@main").unwrap();
+        let s = parse("foo/bar#my-skill@main", false).unwrap();
         assert_eq!(s.ref_.as_deref(), Some("main"));
         assert!(s.ref_explicit);
         assert_eq!(s.skill_in_spec.as_deref(), Some("my-skill"));
@@ -310,7 +316,7 @@ mod tests {
     #[test]
     fn parse_invalid() {
         crate::log::clear_last_error();
-        assert!(parse("foo").is_none());
+        assert!(parse("foo", false).is_none());
         assert!(crate::log::last_error_message().is_some());
     }
 
@@ -326,7 +332,7 @@ mod tests {
 
     #[test]
     fn url_build() {
-        let spec = parse("vercel/next.js@v14.0.0").unwrap();
+        let spec = parse("vercel/next.js@v14.0.0", false).unwrap();
         // Use a deterministic base URL for the test.
         std::env::set_var("ROSIE_GITHUB_BASE_URL", "https://example.test");
         assert_eq!(

@@ -30,7 +30,9 @@ fn print_usage(prog: &str) {
     println!();
     println!("Options:");
     println!("  -a, --agent <name>      Target specific agent (can be repeated)");
-    println!("  -g, --global            Install to home directory (~/.agent/skills/)");
+    println!("  -g, --global            Install to home directory (~/.<agent>/skills/).");
+    println!("                          Also accepted for local-path installs to symlink");
+    println!("                          the source straight into each agent's home dir.");
     println!("  -l, --local             Install to current directory (default, uses symlinks)");
     println!("  -r, --ref               Install as a reference (README or SKILL.md) instead of a skill");
     println!("  -s, --skill <name>      For --ref: install a specific SKILL.md as the reference");
@@ -56,12 +58,14 @@ fn print_usage(prog: &str) {
     println!("  {prog} install owner/repo -a claude -a cursor");
     println!("  {prog} install owner/repo@v1.0.0");
     println!("  {prog} install ./skills/my-custom-skill   # symlink a local skill");
+    println!("  {prog} install ~/skills/my-skill -g       # symlink a local skill globally");
     println!("  {prog} install vercel/next.js --ref       # install README as a reference");
     println!("  {prog} install anthropics/skills --ref --skill pdf   # install a SKILL.md as a reference");
     println!("  {prog} install react --ref --npm                # symlink react's README + docs/ from node_modules");
     println!("  {prog} install @tanstack/react-query --ref --npm    # scoped npm package");
     println!("  {prog} install zod --ref --npm --include README.md  # only README");
     println!("  {prog} install                    # reinstall from .agents/rosie.lock");
+    println!("  {prog} install -g                 # reinstall from ~/.agents/rosie.lock");
     println!("  {prog} update                     # update all lockfile entries");
     println!("  {prog} update slack-gif-creator   # update one skill");
     println!("  {prog} list                       # show installed skills");

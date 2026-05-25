@@ -326,17 +326,21 @@ fn install_local(canonical_rel: &str, opts: &InstallOptions) -> i32 {
     };
 
     if !opts.yes {
-        let target_label = if opts.global {
-            canonical_rel.to_string()
+        let prompt = if opts.global {
+            format!(
+                "\nSymlink {} into {} agent(s)' global skills/ dir? [Y/n] ",
+                canonical_rel,
+                agents.len()
+            )
         } else {
-            format!("{LOCAL_SKILLS_DIR}/{}", skill.name)
+            format!(
+                "\nLink {} -> {}/{} for {} agent(s)? [Y/n] ",
+                canonical_rel,
+                LOCAL_SKILLS_DIR,
+                skill.name,
+                agents.len()
+            )
         };
-        let prompt = format!(
-            "\nLink {} -> {} for {} agent(s)? [Y/n] ",
-            canonical_rel,
-            target_label,
-            agents.len()
-        );
         if !ask_yes_no(&prompt) {
             crate::log::info("Cancelled.");
             return 0;

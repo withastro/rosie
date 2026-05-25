@@ -1,0 +1,5 @@
+assert_exit_code 0 "$(cat exit_code)"
+assert_contains stdout "No skills installed globally"
+assert_contains stdout ".agents/rosie.lock"
+assert_contains stdout "rosie install <owner/repo> -g"
+assert_not_contains stdout "this project"

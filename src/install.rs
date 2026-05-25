@@ -1735,18 +1735,29 @@ pub fn update_skills(base_opts: &InstallOptions, only_skill: Option<&str>) -> i3
 // list_installed_skills
 // ---------------------------------------------------------------------------
 
-pub fn list_installed_skills() -> i32 {
-    let lf = Lockfile::load(Path::new(LOCAL_AGENTS_DIR));
+pub fn list_installed_skills(global: bool) -> i32 {
+    let Some(lf_dir) = lockfile_dir(global) else {
+        crate::log::error("Cannot determine home directory for global lockfile");
+        return 1;
+    };
+    let lf = Lockfile::load(&lf_dir);
     if lf.entries.is_empty() {
+        let scope = if global { "globally" } else { "in this project" };
         println!(
-            "No skills installed in this project ({} not found or empty)",
+            "No skills installed {scope} ({} not found or empty)",
             lf.path.display()
         );
-        println!("Install with: rosie install <owner/repo>");
+        let install_hint = if global {
+            "Install with: rosie install <owner/repo> -g"
+        } else {
+            "Install with: rosie install <owner/repo>"
+        };
+        println!("{install_hint}");
         return 0;
     }
     let use_color = is_stdout_tty();
-    println!("Installed skills ({}):", lf.path.display());
+    let header_scope = if global { "global " } else { "" };
+    println!("Installed {header_scope}skills ({}):", lf.path.display());
     for e in &lf.entries {
         let kind_tag = if e.kind == LockKind::Ref { "[ref]  " } else { "[skill]" };
         let (name_open, name_close) = if use_color {

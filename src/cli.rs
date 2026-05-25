@@ -265,7 +265,7 @@ fn cmd_install(prog: &str, args: Vec<std::ffi::OsString>, list_only: bool) -> i3
 
     if positional.is_empty() {
         if list_only {
-            return install::list_installed_skills();
+            return install::list_installed_skills(opts.global);
         }
         let rc = install::install_from_lockfile(&opts);
         emit_audit_if_appropriate(&opts);

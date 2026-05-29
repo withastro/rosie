@@ -1,0 +1,5 @@
+[toolchain]
+# Pin the compiler so CI doesn't silently jump stable releases. Bump this
+# deliberately and let CI verify the change (a floating "stable" is how the
+# 1.95 -> 1.96 wasm-linking break slipped in unannounced).
+channel = "1.96.0"

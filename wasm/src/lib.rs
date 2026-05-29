@@ -265,6 +265,9 @@ fn apply_tristate(field: &mut bool, value: i32) {
 /// implementation-defined `dispatch_log_to_js` import (see shim.js).
 #[no_mangle]
 pub extern "C" fn rosie_api_install_log_bridge() {
+    // `wasm_import_module = "env"` makes the host-import binding explicit; rustc
+    // 1.96 no longer auto-imports undefined extern symbols. See src/os/wasm.rs.
+    #[link(wasm_import_module = "env")]
     extern "C" {
         fn dispatch_log_to_js(level: i32, message_ptr: *const u8, message_len: usize);
     }

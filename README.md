@@ -21,7 +21,7 @@ npx rosie-skills install owner/repo
 Via Homebrew:
 
 ```bash
-brew tap matthewp/rosie
+brew tap withastro/rosie
 brew install rosie
 ```
 

@@ -200,9 +200,9 @@ synchronously from Node code without spawning a subprocess.
 
 For native installs on platforms we don't ship a binary for:
 
-- Homebrew (macOS / Linux): `brew tap matthewp/rosie && brew install rosie`
+- Homebrew (macOS / Linux): `brew tap withastro/rosie && brew install rosie`
 - Arch Linux: `yay -S rosie`
-- Debian/Ubuntu: see <https://github.com/matthewp/rosie>
+- Debian/Ubuntu: see <https://github.com/withastro/rosie>
 - Source: clone the repo and run `cargo build --release`
 
 ## License

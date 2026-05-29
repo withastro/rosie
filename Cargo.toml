@@ -4,8 +4,8 @@ version = "0.7.6"
 edition = "2021"
 license = "BSD-3-Clause"
 description = "A robot helper for agent skills"
-homepage = "https://github.com/matthewp/rosie"
-repository = "https://github.com/matthewp/rosie"
+homepage = "https://github.com/withastro/rosie"
+repository = "https://github.com/withastro/rosie"
 publish = false
 
 [lib]

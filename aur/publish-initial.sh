@@ -8,7 +8,7 @@
 set -euo pipefail
 
 PKGNAME="rosie"
-REPO="matthewp/rosie"
+REPO="withastro/rosie"
 TEMPLATE="$(cd "$(dirname "$0")" && pwd)/PKGBUILD"
 
 # --- resolve version ---

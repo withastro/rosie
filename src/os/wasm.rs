@@ -40,6 +40,10 @@ pub struct Meta {
 // extern declarations — the JS shim must export these on the `env` namespace.
 // ---------------------------------------------------------------------------
 
+// `wasm_import_module = "env"` makes the host-import binding explicit. This was
+// the implicit default for undefined extern symbols on older toolchains, but
+// rustc 1.96 stopped auto-importing them, so the linker now errors without it.
+#[link(wasm_import_module = "env")]
 extern "C" {
     // File ops
     fn rosie_fs_write(path_ptr: *const u8, path_len: usize, data_ptr: *const u8, data_len: usize) -> i32;

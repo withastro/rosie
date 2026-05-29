@@ -29,7 +29,7 @@ title: rosie
 
   <div class="cta-row">
     <a class="btn btn-primary" href="#install">[ install rosie ]</a>
-    <a class="btn btn-ghost" href="https://github.com/matthewp/rosie">[ github → ]</a>
+    <a class="btn btn-ghost" href="https://github.com/withastro/rosie">[ github → ]</a>
   </div>
 </section>
 
@@ -101,7 +101,7 @@ title: rosie
   </div>
 
   <div class="tab-panel active" data-panel="brew">
-<pre class="term-block"><span class="prompt">$</span> brew tap matthewp/rosie
+<pre class="term-block"><span class="prompt">$</span> brew tap withastro/rosie
 <span class="prompt">$</span> brew install rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
   </div>
 
@@ -113,7 +113,7 @@ title: rosie
 
   <div class="tab-panel" data-panel="apt">
     <p class="panel-note"><span class="comment"># noble for ubuntu 24.04 / debian 13+, jammy for ubuntu 22.04</span></p>
-<pre class="term-block"><span class="prompt">$</span> echo "deb [trusted=yes] https://matthewp.github.io/rosie/debian noble main" \
+<pre class="term-block"><span class="prompt">$</span> echo "deb [trusted=yes] https://withastro.github.io/rosie/debian noble main" \
     | sudo tee /etc/apt/sources.list.d/rosie.list
 <span class="prompt">$</span> sudo apt update
 <span class="prompt">$</span> sudo apt install rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
@@ -124,7 +124,7 @@ title: rosie
 <pre class="term-block"><span class="prompt">$</span> sudo mkdir -p /usr/local/etc/pkg/repos
 <span class="prompt">$</span> cat &lt;&lt;'EOF' | sudo tee /usr/local/etc/pkg/repos/rosie.conf
 rosie: {
-  url: "https://matthewp.github.io/rosie/freebsd/",
+  url: "https://withastro.github.io/rosie/freebsd/",
   enabled: yes,
   signature_type: "none"
 }
@@ -144,7 +144,7 @@ EOF
 <span class="prompt">$</span> sudo pacman -S curl libarchive pkgconf</pre>
 
     <p class="panel-note"><span class="comment"># then clone, build, install (defaults to /usr/local/bin)</span></p>
-<pre class="term-block"><span class="prompt">$</span> git clone https://github.com/matthewp/rosie
+<pre class="term-block"><span class="prompt">$</span> git clone https://github.com/withastro/rosie
 <span class="prompt">$</span> cd rosie
 <span class="prompt">$</span> make
 <span class="prompt">$</span> sudo make install<button class="copy-btn" data-copy>[ copy ]</button></pre>

@@ -116,6 +116,10 @@ mod wasm {
             .unwrap_or_else(|| "https://github.com".to_string())
     }
 
+    // `wasm_import_module = "env"` keeps these as host imports under rustc 1.96,
+    // which no longer auto-imports undefined extern symbols. See src/os/wasm.rs.
+    // ("env" also matches the asyncify-imports names passed to wasm-opt.)
+    #[link(wasm_import_module = "env")]
     extern "C" {
         fn rosie_fetch_to_file(
             url_ptr: *const u8,

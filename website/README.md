@@ -1,6 +1,6 @@
 # rosie.libs.technology
 
-The marketing site for [Rosie](https://github.com/matthewp/rosie). Static assets served by a Cloudflare Worker.
+The marketing site for [Rosie](https://github.com/withastro/rosie). Static assets served by a Cloudflare Worker.
 
 ## Layout
 

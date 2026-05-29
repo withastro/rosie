@@ -51,7 +51,7 @@ if [[ "$ans" =~ ^[Yy]$ ]]; then
     git push -u origin gh-pages
     echo
     echo "==> Done. Next: enable GitHub Pages at"
-    echo "    https://github.com/matthewp/rosie/settings/pages"
+    echo "    https://github.com/withastro/rosie/settings/pages"
     echo "    Source: 'Deploy from a branch'"
     echo "    Branch: gh-pages, folder: / (root)"
 else

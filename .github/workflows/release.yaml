@@ -46,10 +46,11 @@ jobs:
           SHA256: ${{ needs.create-release.outputs.sha256 }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/matthewp/homebrew-rosie.git tap
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/withastro/homebrew-rosie.git tap
           cd tap
 
-          sed -i "s|url \"https://github.com/matthewp/rosie/archive/refs/tags/v.*\.tar\.gz\"|url \"https://github.com/matthewp/rosie/archive/refs/tags/v${VERSION}.tar.gz\"|" Formula/rosie.rb
+          # Org-agnostic match so this also rewrites a formula still pointing at the old org.
+          sed -i "s|url \"https://github.com/[^/]*/rosie/archive/refs/tags/v.*\.tar\.gz\"|url \"https://github.com/withastro/rosie/archive/refs/tags/v${VERSION}.tar.gz\"|" Formula/rosie.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" Formula/rosie.rb
 
           git config user.name "github-actions[bot]"

@@ -193,9 +193,9 @@ A standalone, self-contained `rosie` binary (built from the Rust
 implementation) is distributed separately through OS package managers, for
 users who want the CLI without a Node runtime:
 
-- Homebrew (macOS / Linux): `brew tap matthewp/rosie && brew install rosie`
+- Homebrew (macOS / Linux): `brew tap withastro/rosie && brew install rosie`
 - Arch Linux: `yay -S rosie`
-- Debian/Ubuntu: see <https://github.com/matthewp/rosie>
+- Debian/Ubuntu: see <https://github.com/withastro/rosie>
 - Source: clone the repo and run `cargo build --release`
 
 ## License

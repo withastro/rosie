@@ -4,7 +4,7 @@ pkgver=${VERSION}
 pkgrel=1
 pkgdesc="A robot helper for agent skills"
 arch=('x86_64' 'aarch64')
-url="https://github.com/matthewp/rosie"
+url="https://github.com/withastro/rosie"
 license=('BSD-3-Clause')
 # The Rust binary statically links rustls; no system curl/libarchive needed.
 makedepends=('rust' 'cargo')
@@ -13,7 +13,7 @@ makedepends=('rust' 'cargo')
 # doesn't run gcc's LTO front-end on them, so every ring_core_0_17_14__*
 # symbol comes back undefined. Opting out of LTO restores native ELF objects.
 options=('!lto')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/matthewp/rosie/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/withastro/rosie/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('${SHA256}')
 
 build() {

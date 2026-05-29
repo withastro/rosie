@@ -259,12 +259,9 @@ export function copyDirRecursive(src: string, dst: string): void {
 }
 
 // Create a uniquely-named temp directory under the system temp dir. Mirrors
-// os/native.rs::create_temp_dir.
+// os/native.rs::create_temp_dir, but uses mkdtemp so the name is unpredictable
+// and creation is atomic (fails rather than reusing an existing directory) —
+// avoids a symlink/TOCTOU foothold in a shared temp dir.
 export function createTempDir(prefix: string): string {
-  const base = nodeOs.tmpdir();
-  const nanos = (BigInt(Date.now()) * 1000000n).toString(16);
-  const pid = process.pid;
-  const dir = path.join(base, `${prefix}-${pid}-${nanos}`);
-  createDirAll(dir);
-  return dir;
+  return fs.mkdtempSync(path.join(nodeOs.tmpdir(), `${prefix}-`));
 }

@@ -1,0 +1,6 @@
+# Refs advertisement for cloudflare/skills (wrangler integration fixture).
+# No semver tags, so rosie's resolve_auto falls through to the default branch
+# (main), which is how wrangler installs `cloudflare/skills`. SHAs are
+# placeholders; rosie only requires 40-char hex.
+HEAD 1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c
+refs/heads/main 1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c

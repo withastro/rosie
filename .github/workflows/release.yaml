@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
 
+# Minimal default token permissions. Jobs that need to write (releases,
+# gh-pages, npm OIDC) opt in explicitly via their own `permissions:` block.
+permissions:
+  contents: read
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -14,22 +19,25 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       sha256: ${{ steps.sha256.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Get version from tag
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           generate_release_notes: true
 
       - name: Calculate source tarball SHA256
         id: sha256
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           sleep 5
-          curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/v${{ steps.version.outputs.version }}.tar.gz" -o source.tar.gz
+          curl -sL "https://github.com/${REPO}/archive/refs/tags/v${VERSION}.tar.gz" -o source.tar.gz
           sha256=$(sha256sum source.tar.gz | cut -d' ' -f1)
           echo "sha256=$sha256" >> $GITHUB_OUTPUT
           echo "SHA256: $sha256"
@@ -38,7 +46,7 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Update Homebrew formula
         env:
@@ -69,7 +77,7 @@ jobs:
           cat aur/PKGBUILD
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        uses: KSXGitHub/github-actions-deploy-aur@da03e160361ce01bf087e790b6ffd196d7dccff7 # v4.1.3
         with:
           pkgname: rosie
           pkgbuild: ./aur/PKGBUILD
@@ -84,10 +92,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Checkout gh-pages branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: gh-pages
           path: pages
@@ -95,7 +103,7 @@ jobs:
       - name: Build package in FreeBSD VM
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/freebsd-vm@d1e65811565151536c0c894fff74f06351ed26e6 # v1
         with:
           release: "14.2"
           usesh: true
@@ -111,23 +119,25 @@ jobs:
             pkg repo pages/freebsd
 
       - name: Upload .pkg to GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           files: rosie-${{ needs.create-release.outputs.version }}.pkg
 
       - name: Upload rosie binary for npm
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rosie-freebsd-x64
           path: rosie
 
       - name: Commit and push gh-pages
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           cd pages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add freebsd/
-          git commit -m "Publish rosie v${{ needs.create-release.outputs.version }} for FreeBSD"
+          git commit -m "Publish rosie v${VERSION} for FreeBSD"
           # Rebase to pick up any concurrent push from debian-publish (different subdir, no conflict)
           git pull --rebase origin gh-pages
           git push
@@ -143,9 +153,9 @@ jobs:
             runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
 
       - name: Build rosie
         run: |
@@ -155,10 +165,13 @@ jobs:
       - name: Build .deb
         # The Rust binary is self-contained (rustls statically linked), so the
         # debian package no longer needs runtime deps on libcurl/libarchive.
-        run: ./debian/build-package.sh "${{ needs.create-release.outputs.version }}" "${{ matrix.codename }}"
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          CODENAME: ${{ matrix.codename }}
+        run: ./debian/build-package.sh "$VERSION" "$CODENAME"
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deb-${{ matrix.codename }}
           path: rosie_*.deb
@@ -170,13 +183,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout gh-pages branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: gh-pages
           path: pages
 
       - name: Download all .debs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: debs/
           pattern: deb-*
@@ -210,17 +223,19 @@ jobs:
           done
 
       - name: Upload .debs to GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           files: debs/*.deb
 
       - name: Commit and push gh-pages
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           cd pages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add debian/
-          git commit -m "Publish rosie v${{ needs.create-release.outputs.version }} for Debian/Ubuntu"
+          git commit -m "Publish rosie v${VERSION} for Debian/Ubuntu"
           # Rebase to pick up any concurrent push from freebsd job (different subdir, no conflict)
           git pull --rebase origin gh-pages
           git push
@@ -229,9 +244,9 @@ jobs:
     needs: create-release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
 
       - name: Build rosie
         run: |
@@ -239,7 +254,7 @@ jobs:
           cp target/release/rosie rosie
 
       - name: Upload rosie binary for npm
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rosie-linux-x64
           path: rosie
@@ -248,9 +263,9 @@ jobs:
     needs: create-release
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
 
       - name: Build rosie
         run: |
@@ -268,7 +283,7 @@ jobs:
           otool -L rosie
 
       - name: Upload rosie binary for npm
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rosie-darwin-arm64
           path: rosie
@@ -277,13 +292,13 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1
         with:
           target: wasm32-wasip1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
 
@@ -294,7 +309,7 @@ jobs:
         run: cd wasm && ./build.sh
 
       - name: Upload WASM artifact for npm-publish
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rosie-wasm
           path: npm/rosie-skills/wasm/
@@ -306,33 +321,33 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Download linux-x64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: rosie-linux-x64
           path: npm/rosie-skills-linux-x64/bin
 
       - name: Download darwin-arm64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: rosie-darwin-arm64
           path: npm/rosie-skills-darwin-arm64/bin
 
       - name: Download freebsd-x64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: rosie-freebsd-x64
           path: npm/rosie-skills-freebsd-x64/bin
 
       - name: Download WASM fallback
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: rosie-wasm
           path: npm/rosie-skills/wasm

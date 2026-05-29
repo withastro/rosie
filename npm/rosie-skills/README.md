@@ -182,23 +182,16 @@ await rosie.installFromLockfile();
 
 ## How it works
 
-Three platform binaries (`linux-x64`, `darwin-arm64`, `freebsd-x64`) ship as
-optional dependencies. On those platforms the CLI execs the native binary
-directly. On everything else (Windows, `linux-arm64`, `darwin-x64`, etc.) the
-package falls back to an inlined WebAssembly build that does the same work
-in-process. The JS API always uses the WASM build so you can call it
-synchronously from Node code without spawning a subprocess.
+This package is pure JavaScript. The CLI and the JS API run the same
+TypeScript implementation in-process — no native binary, no WebAssembly. It
+works anywhere Node 18+ runs. The only runtime dependencies are `tar` (tarball
+extraction) and `diff` (audit-log diffs).
 
-## Supported platforms
+## Standalone binary
 
-| Platform        | CLI        | JS API |
-|-----------------|------------|--------|
-| linux-x64       | native     | WASM   |
-| darwin-arm64    | native     | WASM   |
-| freebsd-x64     | native     | WASM   |
-| Everything else | WASM       | WASM   |
-
-For native installs on platforms we don't ship a binary for:
+A standalone, self-contained `rosie` binary (built from the Rust
+implementation) is distributed separately through OS package managers, for
+users who want the CLI without a Node runtime:
 
 - Homebrew (macOS / Linux): `brew tap matthewp/rosie && brew install rosie`
 - Arch Linux: `yay -S rosie`

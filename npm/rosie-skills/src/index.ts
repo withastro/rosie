@@ -9,10 +9,23 @@
 //   await rosie.install('anthropics/skills');
 //   const skills = await rosie.list();
 
-import { callApi, loadModule } from "./wasm-loader.js";
+import * as agent from "./agent.js";
+import * as audit from "./audit.js";
+import * as install from "./install.js";
+import { InstallOptions as CoreInstallOptions, RemoveOptions as CoreRemoveOptions } from "./install.js";
+import * as log from "./log.js";
+import * as report from "./report.js";
 
-export type { LogEvent, LogLevel, OnLog } from "./wasm-loader.js";
-import type { OnLog } from "./wasm-loader.js";
+export type LogLevel = "error" | "warn" | "info" | "debug";
+
+export interface LogEvent {
+  level: LogLevel;
+  message: string;
+}
+
+export type OnLog = (event: LogEvent) => void;
+
+const LEVEL_NAMES: LogLevel[] = ["error", "warn", "info", "debug"];
 
 export interface Skill {
   /** Local name of the skill in `.agents/skills/`. */
@@ -248,29 +261,96 @@ export interface UpdateOptions extends BaseOptions, SecurityOptions {
   lockfile?: boolean;
 }
 
-// Wrap a call with process.chdir to the requested cwd, restoring on exit.
-async function withCwd<T>(cwd: string | undefined, fn: () => Promise<T>): Promise<T> {
-  if (!cwd) return fn();
-  const orig = process.cwd();
-  process.chdir(cwd);
+// Wrap a call with process.chdir + an onLog bridge, restoring both on exit.
+async function withEnv<T>(opts: BaseOptions, fn: () => Promise<T>): Promise<T> {
+  const onLog = opts.onLog;
+  if (onLog) {
+    log.setCallback((lvl, msg) => onLog({ level: LEVEL_NAMES[lvl] ?? "info", message: msg }));
+  } else {
+    log.setCallback(null);
+  }
+  const orig = opts.cwd ? process.cwd() : null;
+  if (opts.cwd) process.chdir(opts.cwd);
   try {
     return await fn();
   } finally {
-    process.chdir(orig);
+    if (orig !== null) process.chdir(orig);
+    log.setCallback(null);
   }
 }
 
+function toAgentNames(a: string | string[] | undefined): string[] {
+  if (a === undefined) return [];
+  if (Array.isArray(a)) return a;
+  return a.length > 0 ? [a] : [];
+}
+
+function coreInstallOptions(spec: string | null, opts: InstallOptions): CoreInstallOptions {
+  const o = install.defaultInstallOptions();
+  o.spec = spec;
+  o.skillName = opts.skill ?? null;
+  o.agentNames = toAgentNames(opts.agent);
+  o.global = opts.global ?? false;
+  o.yes = true;
+  o.isReference = opts.ref ?? false;
+  o.nameOverride = opts.name ?? null;
+  o.isNpm = opts.npm ?? false;
+  o.includePaths = opts.include ?? [];
+  o.skipLockfile = opts.lockfile === false;
+  o.stripComments = opts.stripComments ?? true;
+  o.stripInvisible = opts.stripInvisible ?? true;
+  o.retagDetect = opts.retagDetect ?? true;
+  o.forceAudit = opts.forceAudit ?? false;
+  o.suppressAudit = opts.suppressAudit ?? false;
+  return o;
+}
+
+function buildInstallResult(): InstallResult {
+  const reports = report.drain();
+  const instr = report.takeInstructionFile();
+  const auditObj = audit.drain();
+
+  const allOk: string[] = [];
+  const allFail: string[] = [];
+  for (const r of reports) {
+    for (const n of r.installedAgents) if (!allOk.includes(n)) allOk.push(n);
+    for (const n of r.failedAgents) if (!allFail.includes(n)) allFail.push(n);
+  }
+
+  return {
+    skills: reports.map((r) => ({
+      name: r.skillName,
+      kind: r.kind,
+      installedAgents: r.installedAgents,
+      failedAgents: r.failedAgents,
+    })),
+    installedAgents: allOk,
+    failedAgents: allFail,
+    installedInstruction: (instr as InstalledInstruction) ?? null,
+    audit: auditObj as Audit,
+  };
+}
+
 export async function list(opts: BaseOptions = {}): Promise<Skill[]> {
-  return withCwd(opts.cwd, async () => {
-    const mod = await loadModule(opts.onLog);
-    return callApi<Skill[]>(mod, "rosie_api_list_installed");
+  return withEnv(opts, async () => {
+    log.clearLastError();
+    return install.listInstalled(false) as Skill[];
   });
 }
 
 export async function agents(opts: BaseOptions = {}): Promise<Agent[]> {
-  return withCwd(opts.cwd, async () => {
-    const mod = await loadModule(opts.onLog);
-    return callApi<Agent[]>(mod, "rosie_api_agents");
+  return withEnv(opts, async () => {
+    log.clearLastError();
+    const detected = agent.detectAgents(true);
+    return agent.AGENT_DEFS.map((def) => {
+      const m = detected.find((a) => a.def.name === def.name);
+      return {
+        name: def.name,
+        display: def.display,
+        detected: m !== undefined,
+        installPath: m ? m.installPath : null,
+      };
+    });
   });
 }
 
@@ -278,57 +358,49 @@ export async function agents(opts: BaseOptions = {}): Promise<Agent[]> {
  * Install a skill or reference. With no `spec`, reinstalls everything in
  * `.agents/rosie.lock` (matches the CLI's `rosie install` with no args).
  */
-export async function install(spec: string, opts: InstallOptions = {}): Promise<InstallResult> {
+export async function install_(spec: string, opts: InstallOptions = {}): Promise<InstallResult> {
   if (opts.forceAudit && opts.suppressAudit) {
     throw new Error("rosie-skills: forceAudit and suppressAudit are mutually exclusive");
   }
-  return withCwd(opts.cwd, async () => {
-    const mod = await loadModule(opts.onLog);
-    const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
-    const includes = (opts.include ?? []).join("\n");
-    const skipLockfile = opts.lockfile === false ? 1 : 0;
-    return await callApi<InstallResult>(mod, "rosie_api_install", [
-      spec,
-      opts.skill ?? "",
-      agents,
-      opts.name ?? "",
-      includes,
-      opts.ref ? 1 : 0,
-      opts.npm ? 1 : 0,
-      opts.global ? 1 : 0,
-      skipLockfile,
-      tristate(opts.stripComments),
-      tristate(opts.stripInvisible),
-      tristate(opts.retagDetect),
-      tristate(opts.forceAudit),
-      tristate(opts.suppressAudit),
-    ]);
+  return withEnv(opts, async () => {
+    log.clearLastError();
+    report.clear();
+    audit.clear();
+    audit.setCommand("install");
+    const coreSpec = spec.length > 0 ? spec : null;
+    const core = coreInstallOptions(coreSpec, opts);
+    const rc = coreSpec === null ? await install.installFromLockfile(core) : await install.installPackage(core);
+    if (rc !== 0) {
+      throw new Error(log.lastErrorMessage() ?? "rosie-skills: install failed");
+    }
+    return buildInstallResult();
   });
 }
 
-/** Map an optional boolean to the wasm tristate convention: undefined → -1
- *  (use rust default), true → 1, false → 0. */
-function tristate(v: boolean | undefined): number {
-  if (v === undefined) return -1;
-  return v ? 1 : 0;
-}
+export { install_ as install };
 
 /** Reinstall everything from `.agents/rosie.lock`. */
 export async function installFromLockfile(opts: InstallOptions = {}): Promise<InstallResult> {
-  return install("", opts);
+  return install_("", opts);
 }
 
 export async function remove(skillName: string, opts: RemoveOptions = {}): Promise<void> {
-  return withCwd(opts.cwd, async () => {
-    const mod = await loadModule(opts.onLog);
-    const agents = Array.isArray(opts.agent) ? opts.agent.join(",") : opts.agent ?? "";
-    const skipLockfile = opts.lockfile === false ? 1 : 0;
-    await callApi<null>(mod, "rosie_api_remove", [
+  return withEnv(opts, async () => {
+    log.clearLastError();
+    if (skillName.length === 0) {
+      throw new Error("rosie-skills: skill name is required");
+    }
+    const core: CoreRemoveOptions = {
       skillName,
-      agents,
-      opts.global ? 1 : 0,
-      skipLockfile,
-    ]);
+      agentNames: toAgentNames(opts.agent),
+      global: opts.global ?? false,
+      yes: true,
+      skipLockfile: opts.lockfile === false,
+    };
+    const rc = install.removeSkill(core);
+    if (rc !== 0) {
+      throw new Error(log.lastErrorMessage() ?? "rosie-skills: remove failed");
+    }
   });
 }
 
@@ -341,17 +413,25 @@ export async function update(skillName?: string, opts: UpdateOptions = {}): Prom
   if (opts.forceAudit && opts.suppressAudit) {
     throw new Error("rosie-skills: forceAudit and suppressAudit are mutually exclusive");
   }
-  return withCwd(opts.cwd, async () => {
-    const mod = await loadModule(opts.onLog);
-    const skipLockfile = opts.lockfile === false ? 1 : 0;
-    return await callApi<InstallResult>(mod, "rosie_api_update", [
-      skillName ?? "",
-      skipLockfile,
-      tristate(opts.stripComments),
-      tristate(opts.stripInvisible),
-      tristate(opts.retagDetect),
-      tristate(opts.forceAudit),
-      tristate(opts.suppressAudit),
-    ]);
+  return withEnv(opts, async () => {
+    log.clearLastError();
+    report.clear();
+    audit.clear();
+    audit.setCommand("update");
+    const core = install.defaultInstallOptions();
+    core.yes = true;
+    core.global = false;
+    core.skipLockfile = opts.lockfile === false;
+    core.stripComments = opts.stripComments ?? true;
+    core.stripInvisible = opts.stripInvisible ?? true;
+    core.retagDetect = opts.retagDetect ?? true;
+    core.forceAudit = opts.forceAudit ?? false;
+    core.suppressAudit = opts.suppressAudit ?? false;
+    const target = skillName && skillName.length > 0 ? skillName : null;
+    const rc = await install.updateSkills(core, target);
+    if (rc !== 0) {
+      throw new Error(log.lastErrorMessage() ?? "rosie-skills: update failed");
+    }
+    return buildInstallResult();
   });
 }

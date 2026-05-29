@@ -25,30 +25,23 @@ jobs:
       - name: Run regression suite (native)
         run: ./tests/regression/run.sh
 
-  build-wasm:
+  build-js:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          target: wasm32-wasip1
 
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Install binaryen (wasm-opt, pinned via npm)
-        run: cd wasm/spike && npm install
-
-      - name: Build wasm
-        run: cd wasm && ./build.sh
-
-      - name: Build TypeScript wrapper
+      - name: Build the pure-JS package
         run: cd npm/rosie-skills && npm install && npm run build
 
-      - name: Run regression suite (wasm)
-        run: ./tests/regression/run.sh --mode wasm
+      - name: Run regression suite (js)
+        run: ./tests/regression/run.sh --mode js
+
+      - name: Run API parity suite
+        run: ./tests/wasm-parity/run.sh
 
   build-macos:
     runs-on: macos-latest

@@ -14,8 +14,7 @@
     "rosie-skills": "dist/bin.js"
   },
   "files": [
-    "dist",
-    "wasm"
+    "dist"
   ],
   "scripts": {
     "build": "tsc"
@@ -30,12 +29,12 @@
   "engines": {
     "node": ">=18"
   },
-  "optionalDependencies": {
-    "rosie-skills-linux-x64": "0.0.0",
-    "rosie-skills-darwin-arm64": "0.0.0",
-    "rosie-skills-freebsd-x64": "0.0.0"
+  "dependencies": {
+    "diff": "^7.0.0",
+    "tar": "^7.4.3"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0"
   }

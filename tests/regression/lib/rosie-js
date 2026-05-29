@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Wrapper that makes the wasm CLI look like a binary to the regression
-# runner. Sets ROSIE_FORCE_WASM=1 and execs the npm package's bin.js.
+# Wrapper that makes the pure-JS CLI look like a binary to the regression
+# runner. Execs the npm package's bin.js.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
@@ -11,5 +11,4 @@ if [ ! -f "$BIN_JS" ]; then
     exit 2
 fi
 
-export ROSIE_FORCE_WASM=1
 exec node "$BIN_JS" "$@"

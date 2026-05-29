@@ -7,10 +7,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 PORT="${PORT:-8765}"
 
-# Build wasm + TS dist if they're missing.
-if [ ! -f "$REPO_ROOT/npm/rosie-skills/wasm/rosie.wasm" ]; then
-    (cd "$REPO_ROOT/wasm" && ./build.sh)
-fi
+# Build the TS dist if it's missing.
 if [ ! -f "$REPO_ROOT/npm/rosie-skills/dist/index.js" ]; then
     (cd "$REPO_ROOT/npm/rosie-skills" && npm install --silent && npm run build)
 fi

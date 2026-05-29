@@ -1,5 +1,0 @@
-target/
-spike.opt.wasm
-spike.raw.wasm
-test-noasync.js
-node_modules/

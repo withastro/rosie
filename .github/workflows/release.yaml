@@ -114,12 +114,6 @@ jobs:
         with:
           files: rosie-${{ needs.create-release.outputs.version }}.pkg
 
-      - name: Upload rosie binary for npm
-        uses: actions/upload-artifact@v4
-        with:
-          name: rosie-freebsd-x64
-          path: rosie
-
       - name: Commit and push gh-pages
         run: |
           cd pages
@@ -224,82 +218,8 @@ jobs:
           git pull --rebase origin gh-pages
           git push
 
-  npm-binary-linux-x64:
-    needs: create-release
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Build rosie
-        run: |
-          cargo build --release
-          cp target/release/rosie rosie
-
-      - name: Upload rosie binary for npm
-        uses: actions/upload-artifact@v4
-        with:
-          name: rosie-linux-x64
-          path: rosie
-
-  npm-binary-darwin-arm64:
-    needs: create-release
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Build rosie
-        run: |
-          cargo build --release
-          cp target/release/rosie rosie
-
-      - name: Verify binary has no Homebrew dependencies
-        # rustls is statically linked; nothing should reach into /opt/homebrew.
-        run: |
-          if otool -L rosie | grep -qE '/opt/homebrew|/usr/local/Cellar'; then
-            echo "ERROR: binary links against Homebrew libs — not portable"
-            otool -L rosie
-            exit 1
-          fi
-          otool -L rosie
-
-      - name: Upload rosie binary for npm
-        uses: actions/upload-artifact@v4
-        with:
-          name: rosie-darwin-arm64
-          path: rosie
-
-  wasm-build:
-    needs: create-release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          target: wasm32-wasip1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Install binaryen (wasm-opt, pinned via npm)
-        run: cd wasm/spike && npm install
-
-      - name: Build rosie.wasm
-        run: cd wasm && ./build.sh
-
-      - name: Upload WASM artifact for npm-publish
-        uses: actions/upload-artifact@v4
-        with:
-          name: rosie-wasm
-          path: npm/rosie-skills/wasm/
-
   npm-publish:
-    needs: [create-release, npm-binary-linux-x64, npm-binary-darwin-arm64, freebsd, wasm-build]
+    needs: [create-release]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -312,64 +232,15 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Download linux-x64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: rosie-linux-x64
-          path: npm/rosie-skills-linux-x64/bin
-
-      - name: Download darwin-arm64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: rosie-darwin-arm64
-          path: npm/rosie-skills-darwin-arm64/bin
-
-      - name: Download freebsd-x64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: rosie-freebsd-x64
-          path: npm/rosie-skills-freebsd-x64/bin
-
-      - name: Download WASM fallback
-        uses: actions/download-artifact@v4
-        with:
-          name: rosie-wasm
-          path: npm/rosie-skills/wasm
-
-      - name: Make binaries executable
-        run: chmod +x npm/rosie-skills-*/bin/rosie
-
-      - name: Set versions across all packages
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          for dir in rosie-skills rosie-skills-linux-x64 rosie-skills-darwin-arm64 rosie-skills-freebsd-x64; do
-            (cd "npm/$dir" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
-          done
-          node -e "
-            const fs = require('fs');
-            const p = 'npm/rosie-skills/package.json';
-            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-            for (const k of Object.keys(j.optionalDependencies || {})) {
-              j.optionalDependencies[k] = process.env.VERSION;
-            }
-            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
-          "
-
-      - name: Compile TypeScript for rosie-skills
-        # main package ships dist/, produced from src/ via tsc. devDeps include
-        # typescript + @types/node; this step also catches type errors before
-        # publish.
+      - name: Set version
         run: |
           cd npm/rosie-skills
-          npm install
-          npm run build
+          npm version "${{ needs.create-release.outputs.version }}" --no-git-tag-version --allow-same-version
 
-      - name: Publish platform packages
-        run: |
-          for dir in rosie-skills-linux-x64 rosie-skills-darwin-arm64 rosie-skills-freebsd-x64; do
-            (cd "npm/$dir" && npm publish)
-          done
+      - name: Build the pure-JS package
+        # The package ships dist/, produced from src/ via tsc. This also catches
+        # type errors before publish.
+        run: cd npm/rosie-skills && npm install && npm run build
 
       - name: Publish main package
         run: cd npm/rosie-skills && npm publish

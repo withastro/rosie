@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./run.sh                              # native: target/release/rosie
-#   ./run.sh --mode wasm                  # wasm: bin.js + ROSIE_FORCE_WASM=1
+#   ./run.sh --mode js                    # pure-JS CLI: npm/rosie-skills/dist/bin.js
 #   ./run.sh install-basic                # run only matching cases
 #   ./run.sh --binary /path/to/rosie      # use a custom rosie binary
 #   ./run.sh --port 9876                  # mock server port (default 8765)
@@ -40,16 +40,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# --mode wasm: drive the wasm CLI through the npm package's bin.js.
-if [ "$MODE" = "wasm" ]; then
-    ROSIE_BINARY="$HERE/lib/rosie-wasm"
+# --mode js: drive the pure-JS CLI through the npm package's bin.js.
+if [ "$MODE" = "js" ]; then
+    ROSIE_BINARY="$HERE/lib/rosie-js"
 fi
 
 if [ ! -x "$ROSIE_BINARY" ]; then
     echo "rosie binary not found or not executable: $ROSIE_BINARY" >&2
     case "$MODE" in
         native|custom) echo "build first: (cd $REPO_ROOT && cargo build --release)" >&2 ;;
-        wasm)          echo "build first: (cd $REPO_ROOT/wasm && ./build.sh) && (cd $REPO_ROOT/npm/rosie-skills && npm install && npm run build)" >&2 ;;
+        js)            echo "build first: (cd $REPO_ROOT/npm/rosie-skills && npm install && npm run build)" >&2 ;;
     esac
     exit 2
 fi

@@ -5,6 +5,7 @@
 // negative return to 255.
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { parseArgs } from "node:util";
 import * as agent from "./agent.js";
 import * as audit from "./audit.js";
@@ -162,12 +163,16 @@ export async function run(args: string[]): Promise<number> {
   const raw = applyCwd(args);
   if (raw === null) return 1;
 
+  // Display name in usage/help/examples. argv[0] is often a full path (e.g. the
+  // npx bin shim at ~/.npm/_npx/.../node_modules/.bin/rosie-skills); show just
+  // the basename so help reads `rosie-skills` regardless of how it was invoked.
+  const prog = raw.length > 0 ? path.basename(raw[0]) : "rosie-skills";
+
   if (raw.length < 2) {
-    printUsage("rosie");
+    printUsage(prog);
     return 1;
   }
 
-  const prog = raw[0];
   const command = raw[1];
   const cmdArgs = raw.slice(2);
 

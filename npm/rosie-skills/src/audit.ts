@@ -6,7 +6,7 @@
 //
 // Threat model and schema rationale: see design/security.md.
 
-import { createTwoFilesPatch } from "diff";
+import { createUnifiedDiff } from "./unified-diff.js";
 
 export type Operation = "install" | "update";
 export type AuditKind = "skill" | "reference";
@@ -82,12 +82,11 @@ export function isEmpty(audit: Audit): boolean {
 
 // Build a unified-diff string for `name` between `old` and `new`, with 3 lines
 // of context. Empty string if both sides are equal. Mirrors
-// audit.rs::unified_diff (uses the `diff` package instead of `similar`).
+// audit.rs::unified_diff; uses the local ./unified-diff generator (an LCS-based
+// git-style unified diff) rather than a third-party diff package.
 export function unifiedDiff(name: string, oldStr: string, newStr: string): string {
   if (oldStr === newStr) return "";
-  return createTwoFilesPatch(`a/${name}`, `b/${name}`, oldStr, newStr, undefined, undefined, {
-    context: 3,
-  });
+  return createUnifiedDiff(`a/${name}`, `b/${name}`, oldStr, newStr, 3);
 }
 
 // Serialize an Audit to JSON. Field order matches audit.rs::to_json; JSON

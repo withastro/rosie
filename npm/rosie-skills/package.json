@@ -17,7 +17,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --test test/diff.test.mjs"
   },
   "repository": {
     "type": "git",
@@ -30,12 +31,11 @@
     "node": ">=18"
   },
   "dependencies": {
-    "diff": "^7.0.0",
     "modern-tar": "^0.7.6"
   },
   "devDependencies": {
-    "@types/diff": "^7.0.0",
     "@types/node": "^20.0.0",
+    "diff": "^7.0.0",
     "typescript": "^5.4.0"
   }
 }

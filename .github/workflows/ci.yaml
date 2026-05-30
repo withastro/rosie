@@ -41,6 +41,9 @@ jobs:
       - name: Build the pure-JS package
         run: cd npm/rosie-skills && npm install && npm run build
 
+      - name: Run pure-JS unit tests
+        run: cd npm/rosie-skills && node --test test/diff.test.mjs
+
       - name: Run regression suite (js)
         run: ./tests/regression/run.sh --mode js
 

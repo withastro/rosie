@@ -1,14 +1,22 @@
-// Tar.gz extraction via node-tar. Ported from src/archive.rs.
+// Tar.gz extraction via modern-tar. Ported from src/archive.rs.
 //
 // Two entry points:
 //   - extractTarball(archivePath, destDir): extract everything under destDir.
 //   - rootDir(archivePath): the first path component of the first archive
 //     entry, which is GitHub's <repo>-<ref> wrapper dir.
 //
-// node-tar handles gzip, PAX/GNU long names, symlinks, mode bits, and
-// path-traversal protection, so this is thin wiring over it.
+// modern-tar handles gzip (via the gunzip step below), PAX/GNU long names,
+// symlinks, mode bits, and path-traversal protection (it rejects ".."
+// components and validates symlink/hardlink targets stay inside destDir), so
+// this is thin wiring over it. Both functions are async: modern-tar is
+// stream-based and has no synchronous API.
 
-import * as tar from "tar";
+import * as fs from "node:fs";
+import * as zlib from "node:zlib";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { unpackTar } from "modern-tar/fs";
+import { createTarDecoder } from "modern-tar";
 import * as os from "./os.js";
 import * as log from "./log.js";
 
@@ -18,7 +26,7 @@ function errMsg(e: unknown): string {
 
 // Extract the tar.gz at archivePath into destDir. Returns 0 on success, -1 on
 // failure. Mirrors archive.rs::extract_tarball.
-export function extractTarball(archivePath: string, destDir: string): number {
+export async function extractTarball(archivePath: string, destDir: string): Promise<number> {
   try {
     os.createDirAll(destDir);
   } catch (e) {
@@ -27,7 +35,13 @@ export function extractTarball(archivePath: string, destDir: string): number {
   }
   log.debug(`Extracting to: ${destDir}`);
   try {
-    tar.extract({ file: archivePath, cwd: destDir, sync: true });
+    // GitHub tarballs are gzipped; gunzip before handing raw tar to unpackTar.
+    // No `strip` — the <repo>-<ref> wrapper dir is kept and found by rootDir.
+    await pipeline(
+      fs.createReadStream(archivePath),
+      zlib.createGunzip(),
+      unpackTar(destDir),
+    );
   } catch (e) {
     log.error(`Error reading archive: ${errMsg(e)}`);
     return -1;
@@ -36,26 +50,23 @@ export function extractTarball(archivePath: string, destDir: string): number {
 }
 
 // Find the first path component of the first real entry in the archive.
-// GitHub tarballs wrap the repo in <repo>-<ref>/. Skips PAX extended/global
-// header pseudo-entries. Mirrors archive.rs::root_dir.
-export function rootDir(archivePath: string): string | null {
-  let root: string | null = null;
+// GitHub tarballs wrap the repo in <repo>-<ref>/. modern-tar applies PAX
+// extended headers internally rather than emitting pseudo-entries, so the
+// first decoded entry is already a real one. Mirrors archive.rs::root_dir.
+export async function rootDir(archivePath: string): Promise<string | null> {
   try {
-    tar.list({
-      file: archivePath,
-      sync: true,
-      onReadEntry: (entry) => {
-        if (root !== null) return;
-        const type = String(entry.type);
-        if (type === "GlobalExtendedHeader" || type === "ExtendedHeader" || type === "PaxHeader") {
-          return;
-        }
-        const first = entry.path.split("/")[0];
-        if (first && first.length > 0) root = first;
-      },
-    });
+    const bytes = Readable.toWeb(
+      fs.createReadStream(archivePath).pipe(zlib.createGunzip()),
+    );
+    const entries = bytes.pipeThrough(createTarDecoder());
+    for await (const entry of entries) {
+      const first = entry.header.name.split("/")[0];
+      // Drain the body before moving on / returning, or the stream stalls.
+      await entry.body.cancel();
+      if (first && first.length > 0) return first;
+    }
   } catch {
     return null;
   }
-  return root;
+  return null;
 }

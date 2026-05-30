@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "diff": "^7.0.0",
-    "tar": "^7.4.3"
+    "modern-tar": "^0.7.6"
   },
   "devDependencies": {
     "@types/diff": "^7.0.0",

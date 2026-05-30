@@ -18,10 +18,11 @@ Thumbs.db
 core
 
 # Test artifacts
-.agents/
+.agents/skills/
 .claude/
 .opencode/
 .cursor/
+.codex/
 target/
 
 # Regression test fixtures: post-install snapshots under expected/ are golden

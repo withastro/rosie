@@ -184,8 +184,8 @@ await rosie.installFromLockfile();
 
 This package is pure JavaScript. The CLI and the JS API run the same
 TypeScript implementation in-process — no native binary, no WebAssembly. It
-works anywhere Node 18+ runs. The only runtime dependencies are `tar` (tarball
-extraction) and `diff` (audit-log diffs).
+works anywhere Node 18+ runs. The only runtime dependency is `modern-tar`
+(tarball extraction).
 
 ## Standalone binary
 

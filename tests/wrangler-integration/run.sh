@@ -163,6 +163,14 @@ else
           fs.writeFileSync(pkgPath, JSON.stringify(p, null, 2));
         ' "$ws/package.json" "$PKG"
 
+        # Put a corepack-managed `pnpm` on PATH. turbo shells out to the package
+        # manager binary to run each build task, and wrangler's build script
+        # calls `pnpm` directly; both need a resolvable `pnpm`. CI has no global
+        # one (only corepack's on-demand shim), so materialise it here.
+        PNPM_SHIM_DIR="$(mktmp)"
+        corepack enable --install-directory "$PNPM_SHIM_DIR" pnpm >/dev/null 2>&1 || true
+        export PATH="$PNPM_SHIM_DIR:$PATH"
+
         # corepack runs the pnpm version pinned in workers-sdk's packageManager
         # field. Skip browser downloads pulled in by transitive workspace deps.
         # --no-frozen-lockfile: pnpm defaults to a frozen lockfile under CI=1,

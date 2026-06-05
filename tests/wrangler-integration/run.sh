@@ -9,22 +9,31 @@
 # Two levels:
 #   Level 1 (contract)  hermetic. Imports the built rosie-skills by bare
 #                       specifier and replicates wrangler's exact glue.
-#   Level 2 (e2e)       installs the real `wrangler` from npm with rosie-skills
-#                       overridden to the local build, then runs the real
-#                       `wrangler setup --install-skills` binary.
+#   Level 2 (e2e)       builds the real `wrangler` from the workers-sdk source
+#                       with rosie-skills overridden to this checkout's build,
+#                       so OUR rosie is bundled into wrangler-dist/cli.js, then
+#                       runs the real `wrangler setup --install-skills` binary.
+#
+# Why a source build: wrangler no longer keeps rosie-skills as a runtime
+# dependency. It bundles rosie into wrangler-dist/cli.js with esbuild at its
+# own build time (rosie-skills is a devDependency). So a published wrangler
+# carries a frozen rosie snapshot, and an `overrides` against an installed
+# wrangler can't reach it. To exercise THIS branch's rosie end to end we have
+# to reproduce wrangler's build with a pnpm override pointing at our build.
+# See design/wrangler-integration-testing.md.
 #
 # Both drive rosie at the mock GitHub server used by the regression suite
 # (tests/regression/lib/mock_server.py), so no real github.com traffic. Level 2
-# does need npm registry access to install wrangler.
+# needs git + npm-registry access (clone workers-sdk, pnpm install its tree).
 #
 # Usage:
-#   ./run.sh                       # both levels
-#   ./run.sh --no-e2e              # contract only (fully offline)
-#   ./run.sh --wrangler-version X  # pin the wrangler version (default: latest)
-#   ./run.sh --port 8788           # mock server port
-#   ./run.sh --keep-tmp            # keep scratch dirs for inspection
+#   ./run.sh                        # both levels
+#   ./run.sh --no-e2e               # contract only (fully offline)
+#   ./run.sh --workers-sdk-ref X    # clone ref/branch/tag (default: main)
+#   ./run.sh --port 8788            # mock server port
+#   ./run.sh --keep-tmp             # keep scratch dirs for inspection
 #
-# Env equivalents: SKIP_E2E=1, WRANGLER_VERSION=X, PORT=N, KEEP_TMP=1.
+# Env equivalents: SKIP_E2E=1, WORKERS_SDK_REF=X, PORT=N, KEEP_TMP=1.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -32,14 +41,14 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 PKG="$REPO_ROOT/npm/rosie-skills"
 
 PORT="${PORT:-8788}"
-WRANGLER_VERSION="${WRANGLER_VERSION:-latest}"
+WORKERS_SDK_REF="${WORKERS_SDK_REF:-main}"
 SKIP_E2E="${SKIP_E2E:-0}"
 KEEP_TMP="${KEEP_TMP:-0}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-e2e) SKIP_E2E=1; shift ;;
-        --wrangler-version) WRANGLER_VERSION="$2"; shift 2 ;;
+        --workers-sdk-ref) WORKERS_SDK_REF="$2"; shift 2 ;;
         --port) PORT="$2"; shift 2 ;;
         --keep-tmp) KEEP_TMP=1; shift ;;
         -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
@@ -127,81 +136,109 @@ if [ "$SKIP_E2E" = "1" ]; then
     note "Level 2: e2e (skipped: --no-e2e / SKIP_E2E=1)"
     skip "e2e"
 else
-    note "Level 2: e2e (wrangler@$WRANGLER_VERSION + local rosie-skills)"
+    note "Level 2: e2e (build wrangler@$WORKERS_SDK_REF from source + local rosie-skills)"
     e2e="$(mktmp)"
+    ws="$(mktmp)"
     mkdir -p "$e2e/home/.claude" "$e2e/project"
 
-    # Force every rosie-skills in the tree to the local build via overrides,
-    # so wrangler's `^x.y.z` requirement can't pull the published package.
-    cat > "$e2e/package.json" <<JSON
-{
-  "name": "rosie-wrangler-e2e",
-  "private": true,
-  "version": "0.0.0",
-  "dependencies": {
-    "wrangler": "$WRANGLER_VERSION"
-  },
-  "overrides": {
-    "rosie-skills": "file:$PKG"
-  }
-}
-JSON
-
-    note "Installing wrangler (npm)"
-    if ! (cd "$e2e" && npm install --no-audit --no-fund --silent >"$e2e/npm-install.log" 2>&1); then
-        echo "--- npm install log (tail) ---" >&2
-        tail -20 "$e2e/npm-install.log" >&2
-        fail "e2e: npm install failed (use --no-e2e to run offline)"
+    # Clone the workers-sdk monorepo. Blobless + shallow keeps it lean; we only
+    # build the wrangler package and its workspace deps.
+    note "Cloning workers-sdk ($WORKERS_SDK_REF)"
+    if ! git clone --filter=blob:none --depth 1 --branch "$WORKERS_SDK_REF" \
+            https://github.com/cloudflare/workers-sdk.git "$ws" \
+            >"$e2e/clone.log" 2>&1; then
+        echo "--- git clone log (tail) ---" >&2
+        tail -20 "$e2e/clone.log" >&2
+        fail "e2e: git clone workers-sdk failed (use --no-e2e to run offline)"
     else
-        WBIN="$e2e/node_modules/wrangler/bin/wrangler.js"
-        # Confirm the override took: the only rosie-skills in the tree must be
-        # our local build. Its version (0.0.0) is the sentinel — the published
-        # package is ^0.7.6 — and `overrides` hoists it to the top level with no
-        # nested copy under wrangler, so wrangler's ESM import resolves to it.
-        # (Read package.json by file path; the package's `exports` map has no
-        # `./package.json` entry, so a bare `require.resolve` would be blocked.)
-        RS_PKGJSON="$e2e/node_modules/rosie-skills/package.json"
-        RS_VERSION="$(node -e 'try{process.stdout.write(String(require(process.argv[1]).version||""))}catch{}' "$RS_PKGJSON" 2>/dev/null)"
-        NESTED="$(find "$e2e/node_modules" -mindepth 2 -type d -name rosie-skills 2>/dev/null | head -1)"
-        if [ ! -f "$WBIN" ]; then
-            fail "e2e: wrangler bin not found at $WBIN"
-        elif [ "$RS_VERSION" != "0.0.0" ]; then
-            fail "e2e: top-level rosie-skills is not the local build (version=${RS_VERSION:-none}, expected 0.0.0)"
-        elif [ -n "$NESTED" ]; then
-            fail "e2e: a nested rosie-skills copy exists, override did not dedupe ($NESTED)"
+        # Pin rosie-skills to this checkout's build via a pnpm override on the
+        # monorepo root. Wrangler bundles rosie at build time, so this is what
+        # gets baked into wrangler-dist/cli.js.
+        node -e '
+          const fs = require("fs");
+          const [pkgPath, pkgDir] = process.argv.slice(1);
+          const p = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+          p.pnpm = p.pnpm || {};
+          p.pnpm.overrides = Object.assign({}, p.pnpm.overrides, { "rosie-skills": "file:" + pkgDir });
+          fs.writeFileSync(pkgPath, JSON.stringify(p, null, 2));
+        ' "$ws/package.json" "$PKG"
+
+        # Put a corepack-managed `pnpm` on PATH. turbo shells out to the package
+        # manager binary to run each build task, and wrangler's build script
+        # calls `pnpm` directly; both need a resolvable `pnpm`. CI has no global
+        # one (only corepack's on-demand shim), so materialise it here.
+        PNPM_SHIM_DIR="$(mktmp)"
+        corepack enable --install-directory "$PNPM_SHIM_DIR" pnpm >/dev/null 2>&1 || true
+        export PATH="$PNPM_SHIM_DIR:$PATH"
+
+        # corepack runs the pnpm version pinned in workers-sdk's packageManager
+        # field. Skip browser downloads pulled in by transitive workspace deps.
+        # --no-frozen-lockfile: pnpm defaults to a frozen lockfile under CI=1,
+        # but our injected `overrides` intentionally diverges from the committed
+        # lockfile, so let pnpm reconcile it.
+        note "Installing wrangler deps (pnpm; this is large)"
+        if ! ( cd "$ws" && \
+               PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 PUPPETEER_SKIP_DOWNLOAD=1 \
+               corepack pnpm install --filter wrangler... --no-frozen-lockfile --config.confirmModulesPurge=false \
+             ) >"$e2e/install.log" 2>&1; then
+            echo "--- pnpm install log (tail) ---" >&2
+            tail -20 "$e2e/install.log" >&2
+            fail "e2e: pnpm install failed (use --no-e2e to run offline)"
         else
-            note "Running: wrangler setup --install-skills --dry-run --yes"
-            OUT="$e2e/wrangler.log"
-            # Skills install runs in the command wrapper before the command body,
-            # so assert on disk regardless of setup's own exit code. CI=1 +
-            # metrics off keep wrangler non-interactive and off the network.
-            ( cd "$e2e/project" && \
-              HOME="$e2e/home" \
-              ROSIE_GITHUB_BASE_URL="$BASE_URL" \
-              WRANGLER_SEND_METRICS="false" \
-              CI="1" \
-              timeout 180 node "$WBIN" setup --install-skills --dry-run --yes ) \
-              >"$OUT" 2>&1 || true
+            # turbo builds wrangler's workspace deps then wrangler itself. The
+            # DTS (type-declaration) step can fail on an unrelated undici type
+            # mismatch, but the CJS bundle still builds, so tolerate the exit
+            # code and assert on the artifact instead.
+            note "Building wrangler (turbo; DTS step may fail harmlessly)"
+            ( cd "$ws" && SOURCEMAPS=false corepack pnpm turbo build --filter=wrangler ) \
+                >"$e2e/build.log" 2>&1 || true
 
-            ok=1
-            for skill in cloudflare-workers cloudflare-pages; do
-                if [ ! -f "$e2e/home/.claude/skills/$skill/SKILL.md" ]; then
-                    ok=0
-                    echo "      missing: $e2e/home/.claude/skills/$skill/SKILL.md" >&2
-                fi
-            done
-
-            if [ "$ok" = "1" ]; then
-                pass "e2e: wrangler setup --install-skills installed cloudflare/skills"
-                if grep -q "Successfully installed Cloudflare skills" "$OUT"; then
-                    pass "e2e: wrangler reported success"
-                else
-                    skip "e2e: success line not found (skills present on disk; see $OUT)"
-                fi
+            WDIST="$ws/packages/wrangler/wrangler-dist"
+            WBIN="$WDIST/cli.js"
+            META="$WDIST/metafile-cjs.json"
+            if [ ! -f "$WBIN" ]; then
+                echo "--- build log (tail) ---" >&2
+                tail -30 "$e2e/build.log" >&2
+                fail "e2e: wrangler bundle not produced ($WBIN)"
+            elif ! grep -q "rosie-skills@file" "$META" 2>/dev/null; then
+                # The bundled rosie must trace back to our file: override, not a
+                # registry copy. esbuild records its inputs in the metafile.
+                fail "e2e: bundled rosie-skills is not the local build (override did not take)"
             else
-                echo "--- wrangler output (tail) ---" >&2
-                tail -30 "$OUT" >&2
-                fail "e2e: skills not installed to sandbox HOME"
+                note "Running: wrangler setup --install-skills --dry-run --yes"
+                OUT="$e2e/wrangler.log"
+                # Skills install runs in the command wrapper before the command
+                # body, so assert on disk regardless of setup's own exit code.
+                # CI=1 + metrics off keep wrangler non-interactive and off the
+                # network.
+                ( cd "$e2e/project" && \
+                  HOME="$e2e/home" \
+                  ROSIE_GITHUB_BASE_URL="$BASE_URL" \
+                  WRANGLER_SEND_METRICS="false" \
+                  CI="1" \
+                  timeout 180 node "$WBIN" setup --install-skills --dry-run --yes ) \
+                  >"$OUT" 2>&1 || true
+
+                ok=1
+                for skill in cloudflare-workers cloudflare-pages; do
+                    if [ ! -f "$e2e/home/.claude/skills/$skill/SKILL.md" ]; then
+                        ok=0
+                        echo "      missing: $e2e/home/.claude/skills/$skill/SKILL.md" >&2
+                    fi
+                done
+
+                if [ "$ok" = "1" ]; then
+                    pass "e2e: source-built wrangler installed cloudflare/skills"
+                    if grep -q "Successfully installed Cloudflare skills" "$OUT"; then
+                        pass "e2e: wrangler reported success"
+                    else
+                        skip "e2e: success line not found (skills present on disk; see $OUT)"
+                    fi
+                else
+                    echo "--- wrangler output (tail) ---" >&2
+                    tail -30 "$OUT" >&2
+                    fail "e2e: skills not installed to sandbox HOME"
+                fi
             fi
         fi
     fi

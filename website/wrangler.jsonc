@@ -8,7 +8,7 @@
   },
   "routes": [
     {
-      "pattern": "rosie.libs.technology",
+      "pattern": "rosie.astro.build",
       "custom_domain": true
     }
   ],

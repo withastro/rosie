@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://rosie.libs.technology/sitemap-index.xml
+Sitemap: https://rosie.astro.build/sitemap-index.xml

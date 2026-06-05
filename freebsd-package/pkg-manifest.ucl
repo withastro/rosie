@@ -3,7 +3,7 @@ version: "${VERSION}"
 origin: sysutils/rosie
 comment: A robot helper for agent skills
 maintainer: matthew@matthewphillips.info
-www: https://github.com/matthewp/rosie
+www: https://github.com/withastro/rosie
 abi: FreeBSD:14:amd64
 arch: freebsd:14:x86:64
 prefix: /usr/local

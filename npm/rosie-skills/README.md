@@ -134,7 +134,7 @@ await rosie.update('pdf');      // update just one
 ### Security defenses
 
 Every install applies content sanitization and structured auditing by
-default; see [docs/security](https://rosie.cli/docs/security/) for the full
+default; see [docs/security](https://rosie.astro.build/docs/security/) for the full
 threat model. Each defense can be disabled per call via `InstallOptions`:
 
 ```js

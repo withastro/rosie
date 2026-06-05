@@ -4,7 +4,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Matthew Phillips <matthew@matthewphillips.info>
-Homepage: https://github.com/matthewp/rosie
+Homepage: https://github.com/withastro/rosie
 Description: A robot helper for agent skills
  A fast, cross-platform package manager for AI agent skills.
  Think npm, but for skills.

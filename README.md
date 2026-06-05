@@ -31,18 +31,18 @@ on the docs site.
 ## Documentation
 
 Full docs, including the CLI reference, the typed JavaScript API, lockfile
-format, supported agents, and more: **<https://rosie.libs.technology/>**.
+format, supported agents, and more: **<https://rosie.astro.build/>**.
 
 A quick jump table:
 
-- **[install](https://rosie.libs.technology/#install)** — all install methods
-- **[cli](https://rosie.libs.technology/#cli)** — commands and flags
-- **[lockfile](https://rosie.libs.technology/#lockfile)** — `.agents/rosie.lock` format
-- **[references](https://rosie.libs.technology/#references)** — markdown docs as agent context
-- **[js api](https://rosie.libs.technology/#js-api)** — `import * as rosie from 'rosie-skills'`
-- **[supported](https://rosie.libs.technology/#supported)** — detected agents
-- **[skill format](https://rosie.libs.technology/#skill-format)** — anatomy of a skill
-- **[how it works](https://rosie.libs.technology/#how-it-works)** — what happens on install
+- **[install](https://rosie.astro.build/#install)** — all install methods
+- **[cli](https://rosie.astro.build/docs/cli/)** — commands and flags
+- **[lockfile](https://rosie.astro.build/docs/lockfile/)** — `.agents/rosie.lock` format
+- **[references](https://rosie.astro.build/docs/references/)** — markdown docs as agent context
+- **[js api](https://rosie.astro.build/docs/js-api/)** — `import * as rosie from 'rosie-skills'`
+- **[supported](https://rosie.astro.build/docs/agents/)** — detected agents
+- **[skill format](https://rosie.astro.build/docs/skill-format/)** — anatomy of a skill
+- **[how it works](https://rosie.astro.build/docs/how-it-works/)** — what happens on install
 
 ## License
 

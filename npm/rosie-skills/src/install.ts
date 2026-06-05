@@ -749,13 +749,14 @@ export async function installPackage(opts: InstallOptions): Promise<number> {
   }
 
   log.info("Extracting...");
-  if ((await archive.extractTarball(tarballPath, tempDir)) !== 0) {
+  const extracted = await archive.extractTarball(tarballPath, tempDir);
+  if (extracted.rc !== 0) {
     log.error("Failed to extract package");
     safeRemoveDir(tempDir);
     return -1;
   }
 
-  const root = await archive.rootDir(tarballPath);
+  const root = extracted.root;
   const extractedPath = root !== null ? path.join(tempDir, root) : tempDir;
 
   if (opts.isReference) {

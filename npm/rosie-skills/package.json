@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --test test/diff.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "repository": {
     "type": "git",

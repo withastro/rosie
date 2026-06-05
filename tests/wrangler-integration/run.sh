@@ -165,10 +165,13 @@ else
 
         # corepack runs the pnpm version pinned in workers-sdk's packageManager
         # field. Skip browser downloads pulled in by transitive workspace deps.
+        # --no-frozen-lockfile: pnpm defaults to a frozen lockfile under CI=1,
+        # but our injected `overrides` intentionally diverges from the committed
+        # lockfile, so let pnpm reconcile it.
         note "Installing wrangler deps (pnpm; this is large)"
         if ! ( cd "$ws" && \
                PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 PUPPETEER_SKIP_DOWNLOAD=1 \
-               corepack pnpm install --filter wrangler... --config.confirmModulesPurge=false \
+               corepack pnpm install --filter wrangler... --no-frozen-lockfile --config.confirmModulesPurge=false \
              ) >"$e2e/install.log" 2>&1; then
             echo "--- pnpm install log (tail) ---" >&2
             tail -20 "$e2e/install.log" >&2

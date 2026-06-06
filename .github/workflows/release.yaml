@@ -136,6 +136,22 @@ jobs:
           git pull --rebase origin gh-pages
           git push
 
+      # The gh-pages branch above is the canonical accumulating store; R2 is the
+      # served copy behind pkg.rosie.astro.build. We sync only freebsd/ so this
+      # job never races the debian job's prefix (sync deletes within its target).
+      - name: Set up rclone
+        uses: AnimMouse/setup-rclone@26ef2133e09fd383329a1d4c1fbe6a71db1976c9 # v1.12.0
+
+      - name: Publish FreeBSD repo to R2
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_REGION: auto
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+        run: rclone sync ./pages/freebsd/ r2:pkg-rosie/freebsd/ --checksum --s3-no-check-bucket
+
   debian-build:
     needs: create-release
     strategy:
@@ -233,6 +249,22 @@ jobs:
           # Rebase to pick up any concurrent push from freebsd job (different subdir, no conflict)
           git pull --rebase origin gh-pages
           git push
+
+      # The gh-pages branch above is the canonical accumulating store; R2 is the
+      # served copy behind pkg.rosie.astro.build. We sync only debian/ so this
+      # job never races the freebsd job's prefix (sync deletes within its target).
+      - name: Set up rclone
+        uses: AnimMouse/setup-rclone@26ef2133e09fd383329a1d4c1fbe6a71db1976c9 # v1.12.0
+
+      - name: Publish Debian repo to R2
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_REGION: auto
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+        run: rclone sync ./pages/debian/ r2:pkg-rosie/debian/ --checksum --s3-no-check-bucket
 
   npm-publish:
     needs: [create-release]

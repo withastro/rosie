@@ -1,6 +1,6 @@
 [package]
 name = "rosie"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 license = "BSD-3-Clause"
 description = "A robot helper for agent skills"

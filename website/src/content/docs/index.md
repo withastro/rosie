@@ -113,7 +113,7 @@ title: rosie
 
   <div class="tab-panel" data-panel="apt">
     <p class="panel-note"><span class="comment"># noble for ubuntu 24.04 / debian 13+, jammy for ubuntu 22.04</span></p>
-<pre class="term-block"><span class="prompt">$</span> echo "deb [trusted=yes] https://withastro.github.io/rosie/debian noble main" \
+<pre class="term-block"><span class="prompt">$</span> echo "deb [trusted=yes] https://pkg.rosie.astro.build/debian noble main" \
     | sudo tee /etc/apt/sources.list.d/rosie.list
 <span class="prompt">$</span> sudo apt update
 <span class="prompt">$</span> sudo apt install rosie<button class="copy-btn" data-copy>[ copy ]</button></pre>
@@ -124,7 +124,7 @@ title: rosie
 <pre class="term-block"><span class="prompt">$</span> sudo mkdir -p /usr/local/etc/pkg/repos
 <span class="prompt">$</span> cat &lt;&lt;'EOF' | sudo tee /usr/local/etc/pkg/repos/rosie.conf
 rosie: {
-  url: "https://withastro.github.io/rosie/freebsd/",
+  url: "https://pkg.rosie.astro.build/freebsd/",
   enabled: yes,
   signature_type: "none"
 }
